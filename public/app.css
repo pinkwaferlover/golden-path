@@ -9,7 +9,7 @@ body { margin: 0; font-family: var(--sans); background: var(--ground); color: va
 a { color: var(--blue); } a:hover { color: #1E3F6E; }
 code { font-family: var(--mono); }
 button { font-family: var(--sans); cursor: pointer; }
-.app { display: flex; min-height: 100vh; }
+.app { display: flex; min-height: 100vh; max-width: 1440px; margin: 0 auto; }
 .rail { width: 200px; flex-shrink: 0; padding: 32px 16px 16px; border-right: 1px solid var(--border); background: var(--rail); display: flex; flex-direction: column; gap: 6px; position: sticky; top: 0; height: 100vh; }
 .brand { font-family: var(--serif); font-size: 24px; padding: 0 12px 14px; }
 .rail-label { font-size: 11px; font-weight: 600; letter-spacing: .08em; color: var(--mut); padding: 0 12px 4px; }
@@ -141,3 +141,5 @@ dialog p { font-size: 14px; line-height: 1.5; margin: 6px 0; }
   .facts { grid-column: 2; }
 }
 .loading { padding: 28px 8px; color: var(--mut); font-size: 14px; }
+/* Wider than the page: give the rail a left edge too. */
+@media (min-width: 1441px) { .rail { border-left: 1px solid var(--border); } }
