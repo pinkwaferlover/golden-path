@@ -1,0 +1,6 @@
+#!/bin/sh
+# Golden Path bundle: remind (never block) when a commit has no Tool: note.
+if ! grep -qiE '^Tool:[[:space:]]*[^[:space:]]' "$1"; then
+  echo "golden-path: this commit has no 'Tool:' line, so Golden Path will show its tool as 'not recorded'." >&2
+fi
+exit 0

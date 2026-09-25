@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Golden Path</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/app.css">
+<style id="scene-css"></style>
+</head>
+<body>
+<div class="app">
+  <nav class="rail" id="rail" aria-label="Repositories">
+    <div class="brand">Golden Path</div>
+    <div class="rail-label">REPOS</div>
+    <div id="repo-list"></div>
+    <div class="vignette" aria-hidden="true"><img src="/api/vignette" alt="" width="150" height="92"></div>
+  </nav>
+  <div class="scrim" id="scrim" hidden></div>
+  <main class="main">
+    <header class="top">
+      <button type="button" class="menu" id="menu" aria-label="Show repositories" aria-controls="rail" aria-expanded="false"><svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5 H17 M3 10 H17 M3 15 H17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+      <h1>How far from live? <span id="repo-name"></span></h1>
+      <div class="checked"><span id="checked"></span> <button type="button" id="refresh" class="link-btn">Refresh</button></div>
+    </header>
+    <div id="live"></div>
+    <div id="errors"></div>
+    <section id="board" class="board" aria-live="polite"><div class="loading">Checking your repos — this takes a few seconds the first time…</div></section>
+    <div id="legend" class="legend"></div>
+  </main>
+</div>
+<dialog id="dlg" aria-labelledby="dlg-title">
+  <form method="dialog">
+    <h2 id="dlg-title"></h2>
+    <div id="dlg-body"></div>
+    <div class="dlg-actions"><button type="button" id="dlg-copy" class="btn primary">Copy</button><button value="close" class="btn">Close</button></div>
+  </form>
+</dialog>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

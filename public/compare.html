@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Golden Path — with and without the bundle</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #F7F4EC; color: #1D1B16; }
+header { padding: 20px 24px 8px; }
+h1 { margin: 0; font-family: 'Instrument Serif', Georgia, serif; font-weight: 400; font-size: 32px; }
+p { margin: 6px 0 0; font-size: 14px; color: #5E5A50; max-width: 900px; line-height: 1.5; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 12px 24px 24px; }
+.col h2 { font-size: 15px; margin: 0 0 8px; }
+.col ul { margin: 0 0 10px; padding-left: 18px; font-size: 13px; line-height: 1.5; }
+iframe { width: 100%; height: 1100px; border: 1px solid #E3DDCF; border-radius: 12px; background: #fff; }
+@media (max-width: 1000px) { .cols { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>With and without the bundle</h1>
+  <p>Golden Path works on any git repo. The optional bundle adds a few habits to how you and your AI tools commit. The app then has more to tell you. Both panes below read the same repos, right now.</p>
+</header>
+<div class="cols">
+  <section class="col">
+    <h2>With the bundle</h2>
+    <ul>
+      <li>“Who made it” names the <strong>tool, model and task</strong> from the commit notes (<code>Tool:</code>, <code>Model:</code>, <code>Task:</code>).</li>
+      <li>Every session’s <strong>first push opens a draft pull request</strong>, so work in progress shows up early instead of hiding on one computer.</li>
+      <li>AI sessions end with a <strong>“Needs you”</strong> line linking here, from <code>npm run summary</code>.</li>
+    </ul>
+    <iframe src="/?bundle=on" title="Golden Path with the bundle"></iframe>
+  </section>
+  <section class="col">
+    <h2>Without the bundle</h2>
+    <ul>
+      <li>“Who made it” shows only the <strong>commit author</strong> and any <code>Co-Authored-By</code> line an AI tool added by itself.</li>
+      <li>Work shows up when someone happens to push or open a pull request.</li>
+      <li>Everything else — the journey, the recommendations, the reasons — works the same.</li>
+    </ul>
+    <iframe src="/?bundle=off" title="Golden Path without the bundle"></iframe>
+  </section>
+</div>
+</body>
+</html>

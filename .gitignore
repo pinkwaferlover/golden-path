@@ -1,0 +1,8 @@
+# Your own repos and people — personal, never published
+golden-path.config.json
+node_modules/
+.DS_Store
+
+# Working notes, kept on this computer
+docs/
+.claude/

@@ -1,0 +1,14 @@
+{
+  "name": "golden-path",
+  "version": "0.1.0",
+  "description": "A calm local page that shows what git work is waiting across your repos, and the one thing to do next — in plain words.",
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "engines": { "node": ">=20" },
+  "bin": { "golden-path": "server.mjs" },
+  "scripts": {
+    "start": "node server.mjs",
+    "summary": "node summary.mjs",
+    "test": "node --test test/*.test.mjs"
+  }
+}
