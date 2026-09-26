@@ -23,6 +23,14 @@ const cleanSubject = (s) => (s || "").replace(/^\w+(\([^)]*\))?!?:\s*/, "").repl
 const ago = (ms, now) => Math.floor((now - ms) / DAY);
 const since = (ms, now) => { const m = Math.max(1, Math.round((now - ms) / 6e4)); return m < 60 ? plural(m, "minute") : m < 1440 ? plural(Math.round(m / 60), "hour") : plural(Math.round(m / 1440), "day"); };
 
+// Which releases a piece of work belongs to, read from its commits' Task: trailers.
+// A pattern is an exact task ID ("1.5.6") or a prefix ending in * ("MVP.*"). Exact IDs
+// never match a longer one, so "1.5.6" does not claim "1.5.60".
+export function releasesFor(tasks, releases) {
+  const hit = (p, t) => (p.endsWith("*") ? t.startsWith(p.slice(0, -1)) : t === p);
+  return (releases || []).filter((r) => (r.tasks || []).some((p) => tasks.some((t) => hit(p, t)))).map((r) => r.name);
+}
+
 function person(name, people) {
   if (!name) return null;
   return people[name] || people[name.toLowerCase()] || name;
@@ -76,7 +84,7 @@ function checks(pr) {
   return { total: roll.length, failed, pending: !failed.length && pending, passed, ok: roll.length > 0 ? !failed.length && !pending : true, none: roll.length === 0 };
 }
 
-export function recommend(state, { people = {}, bundle = true, now = Date.now(), dismissed = [] } = {}) {
+export function recommend(state, { people = {}, bundle = true, now = Date.now(), dismissed = [], releases = [] } = {}) {
   const rows = [];
   const tidy = [];
   const gh = state.github;
@@ -97,7 +105,7 @@ export function recommend(state, { people = {}, bundle = true, now = Date.now(),
     const t = new Date(dep && dep.state === "success" ? dep.created : mergedAt);
     const hhmm = t.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
     rows.push({
-      id: `${state.name}#${m.number}`, kind: "merged", colour: live === "failed" ? "red" : "green", group: "done",
+      id: `${state.name}#${m.number}`, releases: [], kind: "merged", colour: live === "failed" ? "red" : "green", group: "done",
       tag: `PULL REQUEST #${m.number} · MERGED${live === "live" ? " · LIVE" : ""}`, title: m.title, href: m.url,
       branchLine: `branch ${m.headRefName}`,
       who: m.author && (m.author.is_bot || /^app\//.test(m.author.login || "")) ? whoLine({ prAuthor: m.author }, { people, bundle }) : [{ t: "Opened by " }, { t: person(m.author && m.author.login, people) || "someone", b: true }],
@@ -126,7 +134,7 @@ export function recommend(state, { people = {}, bundle = true, now = Date.now(),
     const allStaged = w.unstaged === 0;
     const never = state.neverCommitted;
     rows.push({
-      id: `${state.name}:wt:${w.path}`, kind: "folder", colour: stale ? "slate" : "blue", group: stale ? "stale" : "also",
+      id: `${state.name}:wt:${w.path}`, releases: [], kind: "folder", colour: stale ? "slate" : "blue", group: stale ? "stale" : "also",
       tag: never ? "FOLDER · NEVER COMMITTED" + (state.hasRemote ? "" : " · NOT ON GITHUB") : `CHANGES NOT YET COMMITTED${w.branch ? " · ON " + w.branch : ""}`,
       title: never ? "Work that has never been saved as a commit" : w.also.length ? `The same ${plural(w.changed, "file")} changed in ${w.also.length + 1} folders` : `${plural(w.changed, "changed file")} in ${w.path.split(/[\\/]/).pop()}`,
       folders: [w.path, ...w.also.map((x) => x.path)],
@@ -200,6 +208,7 @@ export function recommend(state, { people = {}, bundle = true, now = Date.now(),
     const humans = Object.keys((b.who && b.who.authors) || {}).filter((a) => a !== "Claude" && !/\[bot\]$|bot$/i.test(a)).map((a) => person(a, people));
     const base = {
       id: `${state.name}:${b.name}`, who, stale, date: Date.parse(b.date),
+      releases: releasesFor(Object.keys((b.who && b.who.tasks) || {}), releases),
       signals: { active: active ? `You’re working on this: folder ${active.path.split(/[\\/]/).pop()}, touched ${since(active.touched, now)} ago` : null, human: humans.length ? `Commits by ${[...new Set(humans)].join(", ")}` : null },
       preview: preview ? { href: preview.url, label: "Preview site" } : null,
       buildLog: preview && preview.logUrl ? { href: preview.logUrl, label: "Vercel build log" } : null,

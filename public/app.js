@@ -133,6 +133,15 @@ function headerHtml() {
 }
 
 const dismissedKey = "gp.dismissed";
+const releaseKey = (repo) => `gp.release.${repo}`;
+// "All work" plus one chip per release named in the settings. Choosing one shows only
+// rows whose commits carry one of that release's Task: IDs.
+function releaseChips(repo, chosen) {
+  if (!(repo.releases || []).length) return "";
+  const count = (n) => repo.rows.filter((r) => (r.releases || []).includes(n)).length;
+  const chip = (value, label) => `<button type="button" class="release-chip" data-release="${esc(value)}" aria-pressed="${chosen === value}">${esc(label)}</button>`;
+  return `<div class="release-chips" role="group" aria-label="Show work for">${chip("", "All work")}${repo.releases.map((n) => chip(n, `Release: ${n} (${count(n)})`)).join("")}</div>`;
+}
 function repoCounts(repo) {
   const act = repo.rows.filter((r) => r.group !== "stale" && r.group !== "done" && r.colour !== "grey");
   const best = repo.rows.find((r) => r.best);
@@ -164,10 +173,13 @@ async function render() {
   document.getElementById("errors").innerHTML = repo.errors.filter((e) => e !== "Not a git repository").map((e) => `<div class="errors">${esc(e)}</div>`).join("");
 
   const dismissed = store.get(dismissedKey, []);
-  const rows = repo.rows.filter((r) => !dismissed.includes(r.id));
+  let release = store.get(releaseKey(repo.name), "");
+  if (release && !(repo.releases || []).includes(release)) release = "";
+  const rows = repo.rows.filter((r) => !dismissed.includes(r.id) && (!release || (r.releases || []).includes(release)));
   const active = rows.filter((r) => r.group !== "stale");
   const stale = rows.filter((r) => r.group === "stale");
-  let html = "";
+  let html = releaseChips(repo, release);
+  if (release && !rows.some((r) => r.best) && repo.rows.some((r) => r.best)) html += `<div class="release-note">The best next step overall isn’t part of Release: ${esc(release)}. Choose “All work” to see it.</div>`;
   if (!active.length) {
     const s = await scene();
     html = `<div class="allclear">${s.svg}<div class="msg"><span>Nothing waiting. Everything’s in ${esc(repo.main || "main")}${p ? " and live" : ""}.</span><span>last checked ${new Date(state.checkedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</span></div></div>`;
@@ -229,6 +241,8 @@ let toCopy = "", toRun = null;
 document.addEventListener("click", async (e) => {
   const repoBtn = e.target.closest("[data-repo]");
   if (repoBtn) { current = repoBtn.dataset.repo; store.set("gp.repo", current); localStorage.setItem("gp.repo", current); closeRail(); return render(); }
+  const chip = e.target.closest("[data-release]");
+  if (chip) { store.set(releaseKey(current), chip.dataset.release); return render(); }
   const b = e.target.closest("[data-act]");
   if (!b) return;
   const repo = state.repos.find((r) => r.name === current);

@@ -48,6 +48,10 @@ button { font-family: var(--sans); cursor: pointer; }
 .tip b { display: block; margin-bottom: 4px; }
 .stop:hover .tip { visibility: visible; opacity: 1; transition: opacity .15s .5s, visibility 0s .5s; }
 .stop:focus-within .tip, .stop.open .tip { visibility: visible; opacity: 1; transition: none; }
+.release-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0 12px; }
+.release-chip { font: inherit; font-size: 13px; padding: 6px 12px; min-height: 32px; border-radius: 999px; border: 1px solid #D9D3C4; background: transparent; color: var(--mut); cursor: pointer; }
+.release-chip[aria-pressed="true"] { border-color: currentColor; color: inherit; font-weight: 600; background: #F3EFE6; }
+.release-note { font-size: 13px; color: var(--mut); padding: 0 0 10px; }
 .group-label { font-size: 11px; font-weight: 600; letter-spacing: .08em; color: var(--mut); padding: 14px 0 4px; border-top: 1px solid #EFEAE0; }
 .row { display: grid; grid-template-columns: 250px minmax(0, 1fr) 180px; align-items: start; border-top: 1px solid #EFEAE0; }
 .group-label + .row { border-top: none; }
