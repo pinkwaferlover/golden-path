@@ -13,7 +13,7 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { collectRepo } from "./src/collect.mjs";
 import { recommend } from "./src/recommend.mjs";
-import { allowed } from "./src/actions.mjs";
+import { allowed, timeoutFor, explain } from "./src/actions.mjs";
 import { renderScene, renderVignette } from "./src/scene/scene.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -61,9 +61,13 @@ function view(data, cfg, { bundle, dismissed }) {
 
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml" };
 
-const run = (argv, cwd) => new Promise((resolve) => {
-  execFile(argv[0], argv.slice(1), { cwd, timeout: 120_000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
-    resolve({ ok: !err, output: `${stdout || ""}${stderr || ""}`.trim() || (err ? String(err.message) : "Done.") });
+const run = (argv, cwd, command) => new Promise((resolve) => {
+  const timeout = timeoutFor(argv);
+  execFile(argv[0], argv.slice(1), { cwd, timeout, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
+    const output = `${stdout || ""}${stderr || ""}`.trim() || (err ? String(err.message) : "Done.");
+    if (!err) return resolve({ ok: true, output });
+    const why = explain(`${output}\n${err.code || ""}`, { timedOut: !!err.killed, minutes: timeout / 60_000, command });
+    resolve({ ok: false, output, why });
   });
 });
 
@@ -84,9 +88,14 @@ async function action(cfg, { repo: name, rowId }, busy) {
     const state = view(data, cfg, { bundle: cfg.bundle !== false, dismissed: [] }).repos.find((r) => r.name === name);
     const row = state && state.rows.find((r) => r.id === rowId);
     if (!row) return { code: 409, body: { ok: false, output: "That item has changed since the page loaded. Refresh and look again." } };
-    const argv = row.action && row.action.kind === "copy" ? allowed(row.action.command) : null;
+    const argv = row.action && row.action.kind === "copy" ? allowed(row.action.command, { main: state.main }) : null;
     if (!argv) return { code: 403, body: { ok: false, output: "Golden Path doesn’t run this one. Copy the command instead." } };
-    const result = await run(argv, repoCfg.path);
+    // Push from the branch's own folder when it has one, so the repo's pre-push checks
+    // test the code being pushed, not whatever the main folder has checked out.
+    const src = argv[1] === "push" ? argv[argv.length - 1].split(":")[0] : null;
+    const collected = data.repos.find((r) => r.name === name) || {};
+    const wt = src && (collected.worktreeByBranch || {})[src];
+    const result = await run(argv, wt && existsSync(wt.path) ? wt.path : repoCfg.path, row.action.command);
     cache.at = 0; // the next read sees what git says now
     return { code: 200, body: { ...result, command: row.action.command } };
   } finally {

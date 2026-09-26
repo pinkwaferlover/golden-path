@@ -2,6 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { recommend, prettyModel, whoLine } from "../src/recommend.mjs";
+import { allowed } from "../src/actions.mjs";
 
 const NOW = Date.parse("2026-09-25T22:30:00Z");
 const recent = "2026-09-25T20:00:00Z";
@@ -123,4 +124,24 @@ test("a branch that tracks main is pushed to its own name, never onto main", () 
   const { rows } = run(base({ branches: [b] }));
   const r = rows.find((x) => x.branchLine.startsWith("session/fix"));
   assert.equal(r.action.command, "git push -u origin session/fix");
+});
+
+test("a branch only on GitHub gets a draft command with its title given, since --fill can't read it", () => {
+  const { rows } = run(base({ branches: [branch("claude/remote-only", { subject: "fix(intake): stop guessing" })] }));
+  const r = rows.find((x) => x.greenable === "draft");
+  assert.equal(r.colour, "green");
+  assert.equal(r.action.command, 'gh pr create --draft --head claude/remote-only --title "fix(intake): stop guessing" --body "Opened from Golden Path."');
+  assert.ok(allowed(r.action.command), "Run it accepts it");
+});
+
+test("a local branch with several commits is titled after the newest one, not the branch name", () => {
+  const b = branch("claude/many", { local: true, localSha: "l", unpushed: 0, ahead: 20, subject: "Create handoff briefing" });
+  const { rows } = run(base({ branches: [b] }));
+  assert.match(rows.find((x) => x.greenable === "draft").action.command, /--title "Create handoff briefing"/);
+});
+
+test("a local branch with one commit keeps --fill, which brings the commit's body too", () => {
+  const b = branch("claude/one", { local: true, localSha: "l", unpushed: 0 });
+  const { rows } = run(base({ branches: [b] }));
+  assert.equal(rows.find((x) => x.greenable === "draft").action.command, "gh pr create --draft --fill --head claude/one");
 });
