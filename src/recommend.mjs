@@ -206,8 +206,10 @@ export function recommend(state, { people = {}, bundle = true, now = Date.now(),
 
     if (b.unpushed > 0) {
       const partial = b.unpushed < b.ahead;
+      // Never push onto main: a branch that tracks main (made with `-b x origin/main`)
+      // gets its own branch on GitHub instead, so the work goes through a pull request.
       const upstreamName = b.upstream ? b.upstream.replace(/^origin\//, "") : null;
-      const pushCmd = b.remote ? `git push origin ${b.name}` : upstreamName && upstreamName !== b.name ? `git push origin ${b.name}:${upstreamName}` : `git push -u origin ${b.name}`;
+      const pushCmd = b.remote ? `git push origin ${b.name}` : upstreamName && upstreamName !== b.name && upstreamName !== main ? `git push origin ${b.name}:${upstreamName}` : `git push -u origin ${b.name}`;
       rows.push({
         ...base, kind: "branch", colour: "blue", greenable: "push", group: "also",
         tag: pr ? `PULL REQUEST #${pr.number} · UNPUSHED WORK` : b.remote ? "BRANCH · NO PULL REQUEST" : "BRANCH · ONLY ON THIS COMPUTER",

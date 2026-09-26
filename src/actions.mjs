@@ -15,7 +15,13 @@ const SHAPES = [
 ];
 
 // Returns the argument list to run, or null if the command isn't allowed.
-export function allowed(command) {
+// A push may never land on main (or master): that is what pull requests are for.
+export function allowed(command, { main = "main" } = {}) {
   if (typeof command !== "string" || !SHAPES.some((re) => re.test(command))) return null;
-  return command.split(" ");
+  const argv = command.split(" ");
+  if (argv[1] === "push") {
+    const dest = argv[argv.length - 1].split(":").pop();
+    if ([main, "main", "master", "HEAD"].includes(dest)) return null;
+  }
+  return argv;
 }

@@ -117,3 +117,10 @@ test("among drafts, a person's commits beat AI-only commits", () => {
   assert.equal(g.branchLine.split(" ")[0], "by-sam");
   assert.ok(g.facts.why.some((w) => w.t === "Commits by Sam"));
 });
+
+test("a branch that tracks main is pushed to its own name, never onto main", () => {
+  const b = branch("session/fix", { remote: false, local: true, localSha: "l", unpushed: 1, upstream: "origin/main" });
+  const { rows } = run(base({ branches: [b] }));
+  const r = rows.find((x) => x.branchLine.startsWith("session/fix"));
+  assert.equal(r.action.command, "git push -u origin session/fix");
+});

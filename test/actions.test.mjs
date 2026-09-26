@@ -53,3 +53,10 @@ test("an extra private host is accepted over HTTPS only, and nothing else is", (
   assert.equal((await post("http://pc.tailnet.ts.net")).status, 403, "plain http origin");
   assert.equal((await post("https://pc.tailnet.ts.net")).status, 404, "https origin passes the guards");
 }));
+
+test("a push can never land on main, whatever the branch tracks", () => {
+  for (const c of ["git push origin x:main", "git push origin x:master", "git push origin main", "git push -u origin main", "git push origin x:trunk"]) {
+    assert.equal(allowed(c, { main: "trunk" }), null, c);
+  }
+  assert.deepEqual(allowed("git push origin x:feat/y", { main: "main" }), ["git", "push", "origin", "x:feat/y"]);
+});
