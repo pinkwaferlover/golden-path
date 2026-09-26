@@ -219,9 +219,13 @@ async function load(refresh = false) {
   await render();
 }
 
-// Actions: phase 1 copies the command or prompt; it never runs anything.
+// Actions copy the command or prompt. With actions turned on in the settings, a
+// confirmed button can also run it; the server decides what is allowed.
 const dlg = document.getElementById("dlg");
-let toCopy = "";
+const meta = (n) => (document.querySelector(`meta[name="${n}"]`) || {}).content;
+const actionsOn = meta("gp-actions") === "on";
+const runBtn = document.getElementById("dlg-run"), copyBtn = document.getElementById("dlg-copy");
+let toCopy = "", toRun = null;
 document.addEventListener("click", async (e) => {
   const repoBtn = e.target.closest("[data-repo]");
   if (repoBtn) { current = repoBtn.dataset.repo; store.set("gp.repo", current); localStorage.setItem("gp.repo", current); closeRail(); return render(); }
@@ -232,10 +236,13 @@ document.addEventListener("click", async (e) => {
   const a = row.action;
   if (a.kind === "dismiss") { store.set(dismissedKey, [...store.get(dismissedKey, []), row.id]); return render(); }
   const title = document.getElementById("dlg-title"), body = document.getElementById("dlg-body");
+  toRun = actionsOn && a.kind === "copy" ? { repo: repo.name, rowId: row.id } : null;
+  runBtn.hidden = !toRun; runBtn.disabled = false; runBtn.textContent = "Run it";
+  copyBtn.className = toRun ? "btn" : "btn primary";
   if (a.kind === "copy") {
     title.textContent = a.label;
     toCopy = a.command;
-    body.innerHTML = `<p><strong>What this will do:</strong> ${esc(row.facts ? row.facts.happens : "")}</p>${row.facts ? `<p><strong>If you don’t:</strong> ${esc(row.facts.ifNot)}</p>` : ""}<p>Run this in a terminal in <code>${esc(repo.path)}</code>:</p><pre>${esc(a.command)}</pre><p style="color:#5E5A50;font-size:13px">Golden Path doesn’t run commands yet. It shows the exact one, so nothing happens without you.</p>`;
+    body.innerHTML = `<p><strong>What this will do:</strong> ${esc(row.facts ? row.facts.happens : "")}</p>${row.facts ? `<p><strong>If you don’t:</strong> ${esc(row.facts.ifNot)}</p>` : ""}<p>Run this in a terminal in <code>${esc(repo.path)}</code>:</p><pre>${esc(a.command)}</pre><p style="color:#5E5A50;font-size:13px">${toRun ? "“Run it” runs exactly this command, once, then Golden Path checks git again." : "Golden Path shows the exact command, so nothing happens without you."}</p>`;
   } else if (a.kind === "prompt") {
     title.textContent = "Hand to Claude";
     toCopy = a.prompt;
@@ -246,6 +253,20 @@ document.addEventListener("click", async (e) => {
 });
 document.getElementById("dlg-copy").addEventListener("click", async (e) => {
   try { await navigator.clipboard.writeText(toCopy); e.target.textContent = "Copied ✓"; } catch { e.target.textContent = "Select the text above to copy"; }
+});
+runBtn.addEventListener("click", async () => {
+  if (!toRun) return;
+  runBtn.disabled = true; runBtn.textContent = "Running…";
+  const out = document.createElement("pre");
+  try {
+    const r = await fetch("/api/action", { method: "POST", headers: { "content-type": "application/json", "x-gp-token": meta("gp-token") }, body: JSON.stringify(toRun) });
+    const res = r.headers.get("content-type")?.includes("json") ? await r.json() : { ok: false, output: await r.text() };
+    runBtn.textContent = res.ok ? "Done ✓" : "Didn’t work";
+    out.textContent = res.output;
+  } catch (e) { runBtn.textContent = "Didn’t work"; out.textContent = String(e); }
+  document.getElementById("dlg-body").append(out);
+  toRun = null;
+  load(true);
 });
 document.getElementById("refresh").addEventListener("click", () => load(true));
 const rail = document.getElementById("rail"), scrim = document.getElementById("scrim"), menu = document.getElementById("menu");

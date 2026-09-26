@@ -1,6 +1,7 @@
 {
   "port": 4777,
   "bundle": true,
+  "actions": false,
   "repos": [
     { "name": "my-app", "path": "/path/to/my-app", "liveUrl": "https://my-app.example.com/" },
     { "name": "another-repo", "path": "/path/to/another-repo" }

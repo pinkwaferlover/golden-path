@@ -33,7 +33,8 @@ Open <http://127.0.0.1:4777>. There is nothing to install: it has no dependencie
 
 ## What it does and doesn't do
 
-- **It only reads.** It never commits, pushes or merges for you. Each button copies the exact command, or a ready-written prompt for Claude or another AI tool. The one thing it runs that touches your repo is `git fetch`, which refreshes your local copy of what is on GitHub.
+- **It only reads, unless you turn actions on.** Out of the box it never commits, pushes or merges for you. Each button copies the exact command, or a ready-written prompt for Claude or another AI tool. The one thing it runs that touches your repo is `git fetch`, which refreshes your local copy of what is on GitHub.
+- **Actions, if you want them.** Add `"actions": true` to `golden-path.config.json` and the confirm box gains a **Run it** button. It runs only these commands, each checked against [`src/actions.mjs`](src/actions.mjs): push a branch, open a draft pull request, squash-merge a pull request, and update a pull request from main. It never force-pushes, resets, rebases or deletes. Commits stay with you or your AI tool. The server rebuilds the command from fresh git state rather than trusting the page, and it only accepts requests from its own page.
 - **It stays on your computer.** The server listens on `127.0.0.1` only and refuses requests addressed to any other host. It talks to GitHub through your own `gh` login, and to nothing else.
 - **It only claims what it can prove.** "Mergeable", "checks passed" and "built on #9" come straight from git and GitHub. Anything it can only guess, such as "looks like an older copy of…", says so and is never the green step.
 

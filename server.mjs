@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 // Golden Path: a local page showing what git work is waiting, and what to do next.
-// Listens on this computer only. Phase 1 is read-only: it never runs a git command
-// that changes anything; buttons copy the command for you to run.
+// Listens on this computer only. By default it is read-only: buttons copy the command
+// for you to run. With "actions": true in the settings, a button can run its own
+// command after you confirm, but only commands on the allowlist in src/actions.mjs.
 import http from "node:http";
 import { readFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { collectRepo } from "./src/collect.mjs";
 import { recommend } from "./src/recommend.mjs";
+import { allowed } from "./src/actions.mjs";
 import { renderScene, renderVignette } from "./src/scene/scene.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -57,15 +61,57 @@ function view(data, cfg, { bundle, dismissed }) {
 
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml" };
 
+const run = (argv, cwd) => new Promise((resolve) => {
+  execFile(argv[0], argv.slice(1), { cwd, timeout: 120_000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
+    resolve({ ok: !err, output: `${stdout || ""}${stderr || ""}`.trim() || (err ? String(err.message) : "Done.") });
+  });
+});
+
+async function readJson(req, limit = 4096) {
+  let body = "";
+  for await (const chunk of req) { body += chunk; if (body.length > limit) throw Object.assign(new Error("Too large"), { code: 413 }); }
+  return JSON.parse(body || "{}");
+}
+
+// Runs the command of one row, rebuilt from fresh state. The page never sends a command.
+async function action(cfg, { repo: name, rowId }, busy) {
+  const repoCfg = cfg.repos.find((r) => (r.name || path.basename(r.path)) === name);
+  if (!repoCfg) return { code: 404, body: { ok: false, output: "No such repo." } };
+  if (busy.has(name)) return { code: 409, body: { ok: false, output: "Something is already running in this repo." } };
+  busy.add(name);
+  try {
+    const data = await gather(cfg, { refresh: true });
+    const state = view(data, cfg, { bundle: cfg.bundle !== false, dismissed: [] }).repos.find((r) => r.name === name);
+    const row = state && state.rows.find((r) => r.id === rowId);
+    if (!row) return { code: 409, body: { ok: false, output: "That item has changed since the page loaded. Refresh and look again." } };
+    const argv = row.action && row.action.kind === "copy" ? allowed(row.action.command) : null;
+    if (!argv) return { code: 403, body: { ok: false, output: "Golden Path doesn’t run this one. Copy the command instead." } };
+    const result = await run(argv, repoCfg.path);
+    cache.at = 0; // the next read sees what git says now
+    return { code: 200, body: { ...result, command: row.action.command } };
+  } finally {
+    busy.delete(name);
+  }
+}
+
 export function createServer(cfg, port) {
   const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
+  const token = randomBytes(16).toString("hex");
+  const busy = new Set();
   return http.createServer(async (req, res) => {
     // Refuse requests addressed to any other host name (guards against DNS rebinding).
     if (!allowedHosts.has(req.headers.host)) { res.writeHead(403); res.end("Forbidden"); return; }
     const u = new URL(req.url, `http://${req.headers.host}`);
     const send = (code, type, body) => { res.writeHead(code, { "content-type": type, "cache-control": "no-store", "x-content-type-options": "nosniff" }); res.end(body); };
     try {
-      if (req.method !== "GET") return send(405, "text/plain", "Golden Path is read-only in this version.");
+      if (req.method === "POST" && u.pathname === "/api/action") {
+        if (!cfg.actions) return send(405, "text/plain", "Actions are off. Set \"actions\": true in golden-path.config.json to turn them on.");
+        // Only this page may ask: same origin, and the token it was served with.
+        if (req.headers.origin !== `http://${req.headers.host}` || req.headers["x-gp-token"] !== token) return send(403, "text/plain", "Forbidden");
+        const r = await action(cfg, await readJson(req), busy);
+        return send(r.code, "application/json", JSON.stringify(r.body));
+      }
+      if (req.method !== "GET") return send(405, "text/plain", "Method not allowed");
       if (u.pathname === "/api/state") {
         const data = await gather(cfg, { refresh: u.searchParams.get("refresh") === "1" });
         const bundle = u.searchParams.has("bundle") ? u.searchParams.get("bundle") !== "off" : cfg.bundle !== false;
@@ -81,9 +127,14 @@ export function createServer(cfg, port) {
       if (!/^[\w.-]+$/.test(file)) return send(404, "text/plain", "Not found");
       const full = path.join(here, "public", file);
       if (!existsSync(full)) return send(404, "text/plain", "Not found");
+      if (file === "index.html") {
+        const meta = `<meta name="gp-token" content="${token}"><meta name="gp-actions" content="${cfg.actions ? "on" : "off"}">`;
+        return send(200, TYPES[".html"], (await readFile(full, "utf8")).replace("</head>", `${meta}
+</head>`));
+      }
       return send(200, TYPES[path.extname(full)] || "application/octet-stream", await readFile(full));
     } catch (e) {
-      return send(500, "text/plain", String(e && e.stack || e));
+      return send(e && e.code === 413 ? 413 : e instanceof SyntaxError ? 400 : 500, "text/plain", String(e && e.stack || e));
     }
   });
 }
