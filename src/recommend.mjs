@@ -2,6 +2,8 @@
 // Pure: no git, no network. Every claim it makes comes from the collected facts;
 // anything it can only guess at is worded "looks like" and never goes green.
 
+import { prTitle, PR_BODY } from "./actions.mjs";
+
 export const STAGES = ["Changed", "Staged", "Committed", "Pushed", "Pull request", "Checks pass", "Merged", "Live"];
 const DAY = 864e5;
 
@@ -267,7 +269,12 @@ export function recommend(state, { people = {}, bundle = true, now = Date.now(),
 
     // Pushed, no pull request.
     const row = { ...base, kind: "branch", tag: "BRANCH · NO PULL REQUEST", title: cleanSubject(b.subject), branchLine: `${b.name} · ${aheadBehind}${alias}`, reached: 3, next: 4, colour: "blue", group: "also" };
-    const prCmd = `gh pr create --draft --fill --head ${b.name}`;
+    // --fill only works when the branch is on this computer, and with several commits it
+    // titles the pull request after the branch name. Otherwise name the newest commit.
+    const title = prTitle(b.subject);
+    const prCmd = (!b.local || b.ahead > 1) && title
+      ? `gh pr create --draft --head ${b.name} --title "${title}" --body "${PR_BODY}"`
+      : `gh pr create --draft --fill --head ${b.name}`;
     const facts = {
       why: [
         { ok: true, t: "A draft pull request changes nothing — it only makes the work visible and checked" },

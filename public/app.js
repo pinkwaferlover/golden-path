@@ -263,6 +263,7 @@ runBtn.addEventListener("click", async () => {
     const res = r.headers.get("content-type")?.includes("json") ? await r.json() : { ok: false, output: await r.text() };
     runBtn.textContent = res.ok ? "Done ✓" : "Didn’t work";
     out.textContent = res.output;
+    if (res.why) { const why = document.createElement("p"); why.className = "why"; why.textContent = res.why; document.getElementById("dlg-body").append(why); }
   } catch (e) { runBtn.textContent = "Didn’t work"; out.textContent = String(e); }
   document.getElementById("dlg-body").append(out);
   toRun = null;
