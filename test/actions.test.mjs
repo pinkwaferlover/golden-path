@@ -93,3 +93,40 @@ test("a failed run says why in plain words, and what to do next", () => {
   assert.match(explain("spawn gh ENOENT"), /couldn’t find git or gh/);
   assert.equal(explain("something nobody has seen"), null);
 });
+
+test("asking after a run needs the page's token, and an unknown run says so", () => withServer({ actions: true }, async (base) => {
+  const token = await tokenOf(base);
+  assert.equal((await fetch(`${base}/api/job?id=nope`)).status, 403, "no token");
+  const r = await fetch(`${base}/api/job?id=nope`, { headers: { "x-gp-token": token } });
+  assert.equal(r.status, 404);
+  assert.equal((await r.json()).done, true);
+}));
+
+test("Run it answers at once and the push finishes in the background", async () => {
+  const { mkdtempSync } = await import("node:fs");
+  const { execFileSync } = await import("node:child_process");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const dir = mkdtempSync(path.join(os.tmpdir(), "gp-"));
+  const g = (cwd, ...a) => execFileSync("git", a, { cwd, encoding: "utf8" });
+  g(dir, "init", "-q", "--bare", "-b", "main", "origin.git");
+  g(dir, "clone", "-q", "origin.git", "work");
+  const work = path.join(dir, "work");
+  for (const [k, v] of [["user.name", "Sam Example"], ["user.email", "sam@example.com"]]) g(work, "config", k, v);
+  g(work, "commit", "-q", "--allow-empty", "-m", "start"); g(work, "push", "-q", "origin", "main");
+  g(work, "switch", "-q", "-c", "feat"); g(work, "commit", "-q", "--allow-empty", "-m", "feat: one");
+  await withServer({ actions: true, repos: [{ name: "r", path: work }] }, async (base) => {
+    const token = await tokenOf(base);
+    const r = await fetch(`${base}/api/action`, { method: "POST", headers: { "content-type": "application/json", origin: base, "x-gp-token": token }, body: JSON.stringify({ repo: "r", rowId: "r:feat" }) });
+    assert.equal(r.status, 202);
+    const { job } = await r.json();
+    let res;
+    for (let i = 0; i < 100; i++) {
+      res = await (await fetch(`${base}/api/job?id=${job}`, { headers: { "x-gp-token": token } })).json();
+      if (res.done) break;
+      await new Promise((ok) => setTimeout(ok, 200));
+    }
+    assert.equal(res.ok, true, res.output);
+    assert.match(g(dir + "/origin.git", "branch"), /feat/);
+  });
+});

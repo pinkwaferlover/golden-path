@@ -78,11 +78,12 @@ async function readJson(req, limit = 4096) {
 }
 
 // Runs the command of one row, rebuilt from fresh state. The page never sends a command.
-async function action(cfg, { repo: name, rowId }, busy) {
+async function action(cfg, { repo: name, rowId }, busy, jobs) {
   const repoCfg = cfg.repos.find((r) => (r.name || path.basename(r.path)) === name);
   if (!repoCfg) return { code: 404, body: { ok: false, output: "No such repo." } };
   if (busy.has(name)) return { code: 409, body: { ok: false, output: "Something is already running in this repo." } };
   busy.add(name);
+  let started = false;
   try {
     const data = await gather(cfg, { refresh: true });
     const state = view(data, cfg, { bundle: cfg.bundle !== false, dismissed: [] }).repos.find((r) => r.name === name);
@@ -95,11 +96,21 @@ async function action(cfg, { repo: name, rowId }, busy) {
     const src = argv[1] === "push" ? argv[argv.length - 1].split(":")[0] : null;
     const collected = data.repos.find((r) => r.name === name) || {};
     const wt = src && (collected.worktreeByBranch || {})[src];
-    const result = await run(argv, wt && existsSync(wt.path) ? wt.path : repoCfg.path, row.action.command);
-    cache.at = 0; // the next read sees what git says now
-    return { code: 200, body: { ...result, command: row.action.command } };
+    // Start it and answer at once: a push's checks can take minutes, longer than a phone
+    // or a proxy will hold one request open. The page asks after the job until it's done.
+    const id = randomBytes(8).toString("hex");
+    const job = { command: row.action.command, started: Date.now(), done: false };
+    jobs.set(id, job);
+    run(argv, wt && existsSync(wt.path) ? wt.path : repoCfg.path, row.action.command).then((result) => {
+      Object.assign(job, result, { done: true });
+      cache.at = 0; // the next read sees what git says now
+      busy.delete(name);
+      setTimeout(() => jobs.delete(id), 60 * 60_000).unref();
+    });
+    started = true;
+    return { code: 202, body: { job: id, command: row.action.command } };
   } finally {
-    busy.delete(name);
+    if (!started) busy.delete(name);
   }
 }
 
@@ -110,6 +121,7 @@ export function createServer(cfg, port) {
   const allowedHosts = new Set(origins.keys());
   const token = randomBytes(16).toString("hex");
   const busy = new Set();
+  const jobs = new Map();
   return http.createServer(async (req, res) => {
     // Refuse requests addressed to any other host name (guards against DNS rebinding).
     if (!allowedHosts.has(req.headers.host)) { res.writeHead(403); res.end("Forbidden"); return; }
@@ -120,8 +132,14 @@ export function createServer(cfg, port) {
         if (!cfg.actions) return send(405, "text/plain", "Actions are off. Set \"actions\": true in golden-path.config.json to turn them on.");
         // Only this page may ask: same origin, and the token it was served with.
         if (req.headers.origin !== `${origins.get(req.headers.host)}://${req.headers.host}` || req.headers["x-gp-token"] !== token) return send(403, "text/plain", "Forbidden");
-        const r = await action(cfg, await readJson(req), busy);
+        const r = await action(cfg, await readJson(req), busy, jobs);
         return send(r.code, "application/json", JSON.stringify(r.body));
+      }
+      if (req.method === "GET" && u.pathname === "/api/job") {
+        if (!cfg.actions || req.headers["x-gp-token"] !== token) return send(403, "text/plain", "Forbidden");
+        const job = jobs.get(u.searchParams.get("id") || "");
+        if (!job) return send(404, "application/json", JSON.stringify({ done: true, ok: false, output: "Golden Path no longer has this run (it restarted, or it finished over an hour ago). Refresh to see what git says now." }));
+        return send(200, "application/json", JSON.stringify({ ...job, seconds: Math.round((Date.now() - job.started) / 1000) }));
       }
       if (req.method !== "GET") return send(405, "text/plain", "Method not allowed");
       if (u.pathname === "/api/state") {

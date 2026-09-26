@@ -260,7 +260,19 @@ runBtn.addEventListener("click", async () => {
   const out = document.createElement("pre");
   try {
     const r = await fetch("/api/action", { method: "POST", headers: { "content-type": "application/json", "x-gp-token": meta("gp-token") }, body: JSON.stringify(toRun) });
-    const res = r.headers.get("content-type")?.includes("json") ? await r.json() : { ok: false, output: await r.text() };
+    let res = r.headers.get("content-type")?.includes("json") ? await r.json() : { ok: false, output: await r.text() };
+    // The run carries on on the computer; ask after it until it's done. A dropped
+    // connection (phone asleep, network blip) just means asking again.
+    while (res.job && !res.done) {
+      await new Promise((ok) => setTimeout(ok, 2000));
+      try {
+        const j = await fetch(`/api/job?id=${res.job}`, { headers: { "x-gp-token": meta("gp-token") } });
+        const next = await j.json();
+        res = next.done ? next : { ...res, ...next, done: false };
+        const s = res.seconds || 0;
+        runBtn.textContent = `Running… ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+      } catch { runBtn.textContent = "Lost touch — still checking…"; }
+    }
     runBtn.textContent = res.ok ? "Done ✓" : "Didn’t work";
     out.textContent = res.output;
     if (res.why) { const why = document.createElement("p"); why.className = "why"; why.textContent = res.why; document.getElementById("dlg-body").append(why); }
