@@ -49,11 +49,12 @@ function view(data, cfg, { bundle, dismissed }) {
     configFrom: cfg._from,
     bundle,
     repos: data.repos.map((s) => {
-      const { rows, tidy } = s.errors && s.errors.includes("Not a git repository") ? { rows: [], tidy: [] } : recommend(s, { people: cfg.people || {}, bundle, dismissed });
+      const releases = ((cfg.repos || []).find((r) => (r.name || path.basename(r.path)) === s.name) || {}).releases || [];
+      const { rows, tidy } = s.errors && s.errors.includes("Not a git repository") ? { rows: [], tidy: [] } : recommend(s, { people: cfg.people || {}, bundle, dismissed, releases });
       return {
         name: s.name, path: s.path, main: s.main, github: s.github, errors: s.errors || [], hasRemote: s.hasRemote,
         liveUrl: s.liveUrl, production: s.production || null, hasDeploys: !!(s.deployments && s.deployments.length),
-        rows, tidy,
+        rows, tidy, releases: releases.map((r) => r.name),
       };
     }),
   };

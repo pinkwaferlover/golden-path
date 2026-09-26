@@ -145,3 +145,32 @@ test("a local branch with one commit keeps --fill, which brings the commit's bod
   const { rows } = run(base({ branches: [b] }));
   assert.equal(rows.find((x) => x.greenable === "draft").action.command, "gh pr create --draft --fill --head claude/one");
 });
+
+test("a row is tagged with the releases its commits' Task trailers belong to", () => {
+  const releases = [{ name: "MVP", tasks: ["MVP", "MVP.*", "1.5.6"] }, { name: "Later", tasks: ["SO.*"] }];
+  const tasks = (t) => ({ ...branch("x").who, tasks: t });
+  const inMvp = branch("feedback-api", { who: tasks({ "MVP.5": 2 }) });
+  const epic = branch("mcp-server", { who: tasks({ "1.5.6": 1 }) });
+  const near = branch("mcp-docs", { who: tasks({ "1.5.60": 1 }) });
+  const other = branch("ledger", { who: tasks({ "SO.0": 1 }) });
+  const none = branch("untagged", { who: tasks({}) });
+  const { rows } = run(base({ branches: [inMvp, epic, near, other, none] }), { releases });
+  const tagOf = (n) => rows.find((x) => x.branchLine.startsWith(n)).releases;
+  assert.deepEqual(tagOf("feedback-api"), ["MVP"]);
+  assert.deepEqual(tagOf("mcp-server"), ["MVP"]);
+  assert.deepEqual(tagOf("mcp-docs"), [], "an exact ID never matches a longer one");
+  assert.deepEqual(tagOf("ledger"), ["Later"]);
+  assert.deepEqual(tagOf("untagged"), []);
+});
+
+test("without releases in the settings, rows carry an empty list", () => {
+  const { rows } = run(base({ branches: [branch("a")] }));
+  assert.deepEqual(rows[0].releases, []);
+});
+
+test("every kind of row carries a releases list, including just-merged ones", () => {
+  const merged = [{ number: 5, title: "PR 5", headRefName: "done-work", mergedAt: "2026-09-25T21:00:00Z", mergeCommit: { oid: "m" }, url: "u", author: { login: "sam-example" } }];
+  const { rows } = run(base({ merged, branches: [branch("a")] }), { releases: [{ name: "MVP", tasks: ["T-1"] }] });
+  assert.ok(rows.length >= 2);
+  for (const r of rows) assert.ok(Array.isArray(r.releases), `${r.kind} row has a list`);
+});
