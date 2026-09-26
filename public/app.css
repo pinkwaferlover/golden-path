@@ -147,3 +147,5 @@ dialog p { font-size: 14px; line-height: 1.5; margin: 6px 0; }
 .loading { padding: 28px 8px; color: var(--mut); font-size: 14px; }
 /* Wider than the page: give the rail a left edge too. */
 @media (min-width: 1441px) { .rail { border-left: 1px solid var(--border); } }
+dialog p.why { font-weight: 600; color: var(--red); }
+dialog details summary { font-size: 13px; color: var(--blue); cursor: pointer; margin-top: 8px; }

@@ -276,10 +276,13 @@ runBtn.addEventListener("click", async () => {
     const r = await fetch("/api/action", { method: "POST", headers: { "content-type": "application/json", "x-gp-token": meta("gp-token") }, body: JSON.stringify(toRun) });
     const res = r.headers.get("content-type")?.includes("json") ? await r.json() : { ok: false, output: await r.text() };
     runBtn.textContent = res.ok ? "Done ✓" : "Didn’t work";
-    out.textContent = res.output;
-    if (res.why) { const why = document.createElement("p"); why.className = "why"; why.textContent = res.why; document.getElementById("dlg-body").append(why); }
+    // Lead with the reason in plain words; keep git's own output folded underneath.
+    out.textContent = String(res.output || "").replace(/\x1b\[[0-9;]*m|\[\d+(;\d+)*m/g, "");
+    if (res.why || !res.ok) { const why = document.createElement("p"); why.className = "why"; why.textContent = res.why || "It didn’t work. Git’s own words are below."; document.getElementById("dlg-body").append(why); }
   } catch (e) { runBtn.textContent = "Didn’t work"; out.textContent = String(e); }
-  document.getElementById("dlg-body").append(out);
+  const fold = document.createElement("details"), sum = document.createElement("summary");
+  sum.textContent = "Full output"; fold.append(sum, out);
+  document.getElementById("dlg-body").append(fold);
   toRun = null;
   load(true);
 });

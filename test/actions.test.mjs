@@ -93,3 +93,10 @@ test("a failed run says why in plain words, and what to do next", () => {
   assert.match(explain("spawn gh ENOENT"), /couldn’t find git or gh/);
   assert.equal(explain("something nobody has seen"), null);
 });
+
+test("a refused push says why in plain words: private email, or which check failed", () => {
+  const email = "remote: error: GH007: Your push would publish a private email address.\n ! [remote rejected] x -> x (push declined due to email privacy restrictions)";
+  assert.match(explain(email), /private email address/);
+  const hook = "✔ fine (1ms)\n✖ failing tests:\n\ntest at scripts\roadshow\build.test.mjs:19:1\n✖ the page renders the fixtures to the committed snapshot (22.0765ms)\nerror: failed to push some refs to 'https://github.com/o/r.git'";
+  assert.match(explain(hook), /First failure: the page renders the fixtures to the committed snapshot\./);
+});

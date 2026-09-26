@@ -48,6 +48,9 @@ export const timeoutFor = (argv) => (argv[1] === "push" ? 15 * 60_000 : 2 * 60_0
 export function explain(output, { timedOut = false, minutes = 0, command = "" } = {}) {
   const o = String(output || "");
   if (timedOut) return `Stopped after ${minutes} minutes and nothing was changed on GitHub. Run it in a terminal in the repo folder instead: ${command}`;
+  if (/GH007|email privacy/i.test(o)) return "GitHub refused: the commit has your private email address, and your GitHub settings block that. Nothing was pushed. Give the commit your no-reply address (git commit --amend --reset-author --no-edit in its folder), then run it again.";
+  const failed = o.match(/^\s*✖ (?!failing tests)(.+?)(?: \([\d.]+ms\))?$/m) || o.match(/FAIL\s+(\S+\.test\.\w+)/);
+  if (failed && /failed to push|hook/i.test(o)) return `The repo’s own checks failed before pushing, so nothing was pushed. First failure: ${failed[1].trim()}. Fix it (or ask Claude to), then run it again.`;
   if (/ENOENT/.test(o)) return "This computer couldn’t find git or gh. Check they are installed and on PATH, then restart Golden Path.";
   if (/non-fast-forward|fetch first|\[rejected\]/.test(o)) return "GitHub has newer commits on this branch than this computer. Pull them in first (git pull), then push again.";
   if (/could not compute title or body defaults/.test(o)) return "This branch isn’t on this computer, so gh couldn’t read its commits. Refresh: Golden Path now offers a command that names the title itself.";
