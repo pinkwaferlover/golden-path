@@ -98,3 +98,22 @@ test("the same generated files changed in several folders show as one row", () =
   assert.equal(f.length, 1);
   assert.match(f[0].title, /3 folders/);
 });
+
+test("among drafts, work in a folder touched this week goes green over newer work", () => {
+  const older = branch("mine", { date: "2026-09-24T09:00:00Z", remoteDate: "2026-09-24T09:00:00Z" });
+  const newer = branch("web-idea", { date: recent });
+  const { rows } = run(base({ branches: [older, newer], worktreeByBranch: { mine: { path: "C:/code/app/.worktrees/mine", branch: "mine", touched: NOW - 2 * 3600e3 } } }));
+  const g = rows.find((x) => x.colour === "green");
+  assert.equal(g.branchLine.split(" ")[0], "mine");
+  assert.ok(g.facts.why.some((w) => /folder mine, touched 2 hours ago/.test(w.t)));
+});
+
+test("among drafts, a person's commits beat AI-only commits", () => {
+  const ai = { commits: 1, authors: { Claude: 1 }, tools: {}, models: {}, tasks: {}, coauthors: {}, unrecorded: 1 };
+  const byAi = branch("ai-only", { who: ai });
+  const byPerson = branch("by-sam", { date: "2026-09-25T10:00:00Z" });
+  const { rows } = run(base({ branches: [byAi, byPerson] }));
+  const g = rows.find((x) => x.colour === "green");
+  assert.equal(g.branchLine.split(" ")[0], "by-sam");
+  assert.ok(g.facts.why.some((w) => w.t === "Commits by Sam"));
+});

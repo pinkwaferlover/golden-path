@@ -19,6 +19,7 @@ export function prettyModel(m) {
 const plural = (n, one, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 const cleanSubject = (s) => (s || "").replace(/^\w+(\([^)]*\))?!?:\s*/, "").replace(/\s*\([A-Z]+[\w.-]*\)\s*$/, "").replace(/^./, (c) => c.toUpperCase());
 const ago = (ms, now) => Math.floor((now - ms) / DAY);
+const since = (ms, now) => { const m = Math.max(1, Math.round((now - ms) / 6e4)); return m < 60 ? plural(m, "minute") : m < 1440 ? plural(Math.round(m / 60), "hour") : plural(Math.round(m / 1440), "day"); };
 
 function person(name, people) {
   if (!name) return null;
@@ -190,8 +191,14 @@ export function recommend(state, { people = {}, bundle = true, now = Date.now(),
     const alias = b.aliases && b.aliases.length ? ` · also called ${b.aliases.join(", ")}` : "";
     const aheadBehind = `${b.ahead} ahead, ${b.behind} behind ${main}`;
     const preview = state.previews && state.previews[pr ? pr.headRefOid : b.remoteSha];
+    // Provable signs that someone is working on it now: a folder with it checked out,
+    // touched this week, and commits by a person rather than only by an AI or a robot.
+    const wt = (state.worktreeByBranch || {})[b.name];
+    const active = wt && wt.touched && now - wt.touched < 7 * DAY ? wt : null;
+    const humans = Object.keys((b.who && b.who.authors) || {}).filter((a) => a !== "Claude" && !/\[bot\]$|bot$/i.test(a)).map((a) => person(a, people));
     const base = {
       id: `${state.name}:${b.name}`, who, stale, date: Date.parse(b.date),
+      signals: { active: active ? `You’re working on this: folder ${active.path.split(/[\\/]/).pop()}, touched ${since(active.touched, now)} ago` : null, human: humans.length ? `Commits by ${[...new Set(humans)].join(", ")}` : null },
       preview: preview ? { href: preview.url, label: "Preview site" } : null,
       buildLog: preview && preview.logUrl ? { href: preview.logUrl, label: "Vercel build log" } : null,
       compare: url(`/compare/${main}...${encodeURIComponent(b.name)}`),
@@ -213,7 +220,7 @@ export function recommend(state, { people = {}, bundle = true, now = Date.now(),
         facts: {
           why: [
             { ok: true, t: "Pushing only adds — it never changes main or the live site" },
-            { ok: false, t: `${plural(b.unpushed, "commit")} exist only on this computer` },
+            { ok: false, t: `${plural(b.unpushed, "commit")} ${b.unpushed === 1 ? "exists" : "exist"} only on this computer` },
             { ok: !parents.length, t: parents.length ? `Built on ${parents.map(nameOf).join(", ")}` : "Nothing else is built on it" },
           ],
           happens: `GitHub gets all ${b.ahead} commits${gh ? " and a fresh preview is built" : ""}.${pr ? "" : " Next step: open a draft pull request."}`,
@@ -277,10 +284,13 @@ export function recommend(state, { people = {}, bundle = true, now = Date.now(),
 
   // One green per repo: pushing unsaved work first, then the cleanest merge.
   const prio = { push: 0, merge: 1, draft: 2 };
-  const cands = rows.filter((r) => r.greenable).sort((a, b) => prio[a.greenable] - prio[b.greenable] || (b.date || 0) - (a.date || 0));
+  // Among drafts, prefer work in a folder touched this week, then work with a person's commits.
+  const lean = (r, k) => (r.greenable === "draft" && r.signals && r.signals[k] ? 1 : 0);
+  const cands = rows.filter((r) => r.greenable).sort((a, b) => prio[a.greenable] - prio[b.greenable] || lean(b, "active") - lean(a, "active") || lean(b, "human") - lean(a, "human") || (b.date || 0) - (a.date || 0));
   if (cands.length) {
     const g = cands[0];
     g.colour = "green"; g.group = "next"; g.best = true;
+    if (g.greenable === "draft" && g.facts) for (const k of ["active", "human"]) if (g.signals[k]) g.facts.why.push({ ok: true, t: g.signals[k] });
     if (g.action && g.action.kind === "copy") g.action.primary = true;
     for (const o of cands.slice(1)) o.alsoFine = true;
   }
