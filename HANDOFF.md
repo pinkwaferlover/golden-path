@@ -1,0 +1,65 @@
+# Handoff: make the suggested next step actually work
+
+**Goal:** getting the backlog to zero. The green step Golden Path suggests must succeed when run. At the moment the first suggestion often fails with an error.
+
+**Rule for this work** (from the README): *only claim what you can prove.* If Golden Path can't prove a step will work, the row mustn't be green. It should say plainly what is blocking and offer a working command or a ready "Hand to Claude" prompt.
+
+This session runs on the user's own computer so it can see the real repos, their `golden-path.config.json`, and `gh` signed in.
+
+## Step 1: collect the real errors (do this before changing any code)
+
+1. `npm start`, open http://127.0.0.1:4777, and go through each repo in the config.
+2. For each green row (and any blue row the user tries), note:
+   - the repo, the row's tag and button label, and the exact command,
+   - what happened when it ran: the "Didn't work" output, or the terminal output after running the command by hand in the repo folder.
+3. For each failure, also save the git/GitHub state that explains it:
+   - `git status -sb`, `git rev-list --left-right --count origin/<branch>...<branch>`
+   - `gh pr list --head <branch> --state all --json number,state,headRefName,mergeable,mergeStateStatus,reviewDecision`
+   - `gh pr view <n> --json mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,isDraft`
+4. Write each case into a table in this file: *row → command → error → cause*.
+
+Don't guess at fixes before the table exists. The point is to fix what really fails.
+
+## Step 2: likely causes to check against
+
+From reading the code, and not yet confirmed:
+
+| Suggested step | Possible failure | Missing check | Where |
+|---|---|---|---|
+| Push (`git push origin <b>`) | Rejected (non-fast-forward): GitHub has commits this computer doesn't | `unpushed` is counted only one way. Behind-remote is ignored | `src/collect.mjs` (branch state), `src/recommend.mjs` push block (~line 214) |
+| Push `<b>:<upstream>` | Upstream name clashes with or tracks a different branch | Upstream handling | `recommend.mjs` `pushCmd` |
+| `gh pr create --draft --fill --head <b>` | A pull request already exists (closed or under an alias). `--fill` fails with no commits or a bad title. Needs `--base` | Only *open* pull requests are matched by head name | `recommend.mjs` "Pushed, no pull request" block |
+| `gh pr merge <n> --squash` | Blocked by branch protection (required review or checks), or squash merges not allowed on the repo | `mergeStateStatus` / `reviewDecision` are not fetched. Only `mergeable` is used | `collect.mjs` `gh pr list --json` fields, `recommend.mjs` merge branch |
+| `gh pr update-branch <n>` | Conflict, or no permission | `mergeable` is `UNKNOWN` just after a push | `recommend.mjs` |
+| Run it (any) | 2-minute timeout, `gh` not found on PATH (Windows), or auth prompt waiting for input | `server.mjs` `run()` | `server.mjs` |
+
+## Step 3: fix each confirmed cause
+
+For each confirmed cause:
+1. **Gather the missing fact** in `src/collect.mjs`, for example `mergeStateStatus` and `reviewDecision`, commits on GitHub that this computer doesn't have, or pull requests for this branch in any state.
+2. **Make the row honest** in `src/recommend.mjs`:
+   - If the step can't work, it isn't `greenable`, so the next working row becomes green.
+   - Show a plain-words note that says why ("Needs a review before it can merge", "GitHub has 2 newer commits — pull first").
+   - Offer a working action: an allowed command, a link, or a `prompt` for Claude.
+3. **Add any new command** to the allow-list in `src/actions.mjs`, only if it adds or merges (never force, reset, rebase or delete), and test it in `test/actions.test.mjs`.
+4. **Add a test** in `test/recommend.test.mjs` that builds the failing state and checks that the row isn't green and has the right note and action.
+5. **Improve failure output:** when Run it fails, show the plain-words cause and the next step, not just the raw output.
+
+Then run `npm test` and re-check with the real repos that the green step now runs cleanly.
+
+## Step 4: done when
+
+- On each configured repo, pressing the green step works, and the next green step also works, down to zero or to a row that honestly says it waits on a person.
+- Every failure found in Step 1 has a test.
+- The README's "What it does and doesn't do" is still true. Update it if new facts or commands are added.
+
+## Access this session needs
+
+- The repos listed in `golden-path.config.json`, on the user's disk.
+- `gh auth status` signed in with permission to push, open pull requests and merge on those repos.
+- Node 20+. There are no npm dependencies.
+- Branch: `claude/ollama-local-llm-helper-1rz8ok`, or start a new one from `main`. Never push to `main`.
+
+## Parked, for later
+
+A local-model helper (Ollama on a 10GB RTX 3080). It would write commit and pull request text and explain errors, while a script does the git work. Fixes would still go to cloud Claude. Not started. Only worth building once the steps above work reliably.
