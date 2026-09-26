@@ -95,7 +95,10 @@ async function action(cfg, { repo: name, rowId }, busy) {
 }
 
 export function createServer(cfg, port) {
-  const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
+  // This computer, plus any private names you list (e.g. a Tailscale address served
+  // over HTTPS by `tailscale serve`). Each host's page may only call its own origin.
+  const origins = new Map([[`127.0.0.1:${port}`, "http"], [`localhost:${port}`, "http"], ...(cfg.extraHosts || []).map((h) => [h, "https"])]);
+  const allowedHosts = new Set(origins.keys());
   const token = randomBytes(16).toString("hex");
   const busy = new Set();
   return http.createServer(async (req, res) => {
@@ -107,7 +110,7 @@ export function createServer(cfg, port) {
       if (req.method === "POST" && u.pathname === "/api/action") {
         if (!cfg.actions) return send(405, "text/plain", "Actions are off. Set \"actions\": true in golden-path.config.json to turn them on.");
         // Only this page may ask: same origin, and the token it was served with.
-        if (req.headers.origin !== `http://${req.headers.host}` || req.headers["x-gp-token"] !== token) return send(403, "text/plain", "Forbidden");
+        if (req.headers.origin !== `${origins.get(req.headers.host)}://${req.headers.host}` || req.headers["x-gp-token"] !== token) return send(403, "text/plain", "Forbidden");
         const r = await action(cfg, await readJson(req), busy);
         return send(r.code, "application/json", JSON.stringify(r.body));
       }

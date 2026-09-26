@@ -28,6 +28,8 @@ npm start
 
 Open <http://127.0.0.1:4777>. There is nothing to install: it has no dependencies.
 
+**On your phone, privately.** With [Tailscale](https://tailscale.com) on your computer and phone, run `tailscale serve --bg 4777`, then add your computer's Tailscale name to the settings: `"extraHosts": ["my-pc.tailnet-name.ts.net"]`. Open `https://my-pc.tailnet-name.ts.net` on your phone. Only your own devices can reach it, and Golden Path still listens on this computer only.
+
 - `npm run summary` prints one line per repo: what needs you, and a link.
 - `npm test` runs the tests.
 

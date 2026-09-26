@@ -37,3 +37,19 @@ test("with actions on, only the page itself may ask: right origin and right toke
   assert.equal((await post(base, { origin: base, "x-gp-token": "wrong" })).status, 403, "wrong token");
   assert.equal((await post(base, { origin: base, "x-gp-token": token })).status, 404, "passes the guards, then finds no such repo");
 }));
+
+test("an extra private host is accepted over HTTPS only, and nothing else is", () => withServer({ actions: true, extraHosts: ["pc.tailnet.ts.net"] }, async (base) => {
+  const http = await import("node:http");
+  const req = (headers, method = "GET", p = "/") => new Promise((resolve) => {
+    const u = new URL(base);
+    const r = http.request({ host: u.hostname, port: u.port, path: p, method, headers }, (res) => { let b = ""; res.on("data", (c) => (b += c)); res.on("end", () => resolve({ status: res.statusCode, body: b })); });
+    r.end(method === "POST" ? JSON.stringify({ repo: "r", rowId: "x" }) : undefined);
+  });
+  const page = await req({ host: "pc.tailnet.ts.net" });
+  assert.equal(page.status, 200);
+  const token = page.body.match(/name="gp-token" content="(\w+)"/)[1];
+  assert.equal((await req({ host: "evil.example" })).status, 403, "unlisted host");
+  const post = (origin) => req({ host: "pc.tailnet.ts.net", origin, "x-gp-token": token, "content-type": "application/json" }, "POST", "/api/action");
+  assert.equal((await post("http://pc.tailnet.ts.net")).status, 403, "plain http origin");
+  assert.equal((await post("https://pc.tailnet.ts.net")).status, 404, "https origin passes the guards");
+}));
