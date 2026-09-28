@@ -220,7 +220,9 @@ export function renderVignette() {
   const c = "#BDB6A6";
   let leaves = "";
   for (let i = 0; i < 3; i++) leaves += `<g class="leaf" style="animation-delay:${-i * 2.3}s;animation-duration:8s"><path d="M ${96 + i * 14} 14 q 3 -3 6 0 q -3 3 -6 0 z" fill="${[M.L1, M.L2, M.L3][i]}" opacity="0.6"></path></g>`;
-  return `<svg viewBox="0 0 150 92" width="150" height="92" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><clipPath id="vw"><rect x="92" y="10" width="46" height="42"></rect></clipPath></defs>
+  // It is served as an <img>, which can't see the page's CSS, so it carries its own.
+  const css = `@keyframes vLeaf{0%{transform:translate(0,-8px) rotate(0deg);opacity:0}10%{opacity:1}85%{opacity:1}100%{transform:translate(-14px,44px) rotate(200deg);opacity:0}}.leaf{animation:vLeaf 8s linear infinite;transform-box:fill-box;transform-origin:center}@keyframes vA{0%,49.9%{opacity:1}50%,100%{opacity:0}}@keyframes vB{0%,49.9%{opacity:0}50%,100%{opacity:1}}.typeA{animation:vA .8s steps(1,end) infinite}.typeB{animation:vB .8s steps(1,end) infinite}@media (prefers-reduced-motion: reduce){.leaf,.typeA,.typeB{animation:none}.typeB{opacity:0}}`;
+  return `<svg viewBox="0 0 150 92" width="150" height="92" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><style>${css}</style><defs><clipPath id="vw"><rect x="92" y="10" width="46" height="42"></rect></clipPath></defs>
 <rect x="92" y="10" width="46" height="42" fill="none" stroke="${c}" stroke-width="1.4"></rect><path d="M 115 10 V 52 M 92 31 H 138" stroke="${c}" stroke-width="1"></path>
 <g clip-path="url(#vw)">${leaves}</g>
 <g fill="none" stroke="${c}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">

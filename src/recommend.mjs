@@ -174,6 +174,8 @@ export function recommend(state, { people = {}, bundle = true, now = Date.now(),
     b.parents = ps.filter((p) => !ps.some((q) => q !== p && ((byName.get(q) || {}).parents || []).map((x) => canonical.get(x)).includes(p)));
   }
   const nameOf = (n) => { const pr = openByHead.get(n); return pr ? `#${pr.number}` : n; };
+  const children = new Map(shown.map((b) => [b.name, []]));
+  for (const b of shown) for (const p of b.parents) if (children.has(p)) children.get(p).push(b.name);
 
   for (const b of shown) {
     const pr = openByHead.get(b.name);
@@ -196,8 +198,19 @@ export function recommend(state, { people = {}, bundle = true, now = Date.now(),
     const wt = (state.worktreeByBranch || {})[b.name];
     const active = wt && wt.touched && now - wt.touched < 7 * DAY ? wt : null;
     const humans = Object.keys((b.who && b.who.authors) || {}).filter((a) => a !== "Claude" && !/\[bot\]$|bot$/i.test(a)).map((a) => person(a, people));
+    // What else touches this work. "May clash" is a guess from shared file names, never a proof.
+    const related = new Set([...(b.allParents || []), ...shown.filter((c) => (c.allParents || []).includes(b.name)).map((c) => c.name)]);
+    const mine = new Set(b.files || []);
+    const mayClash = shown.filter((c) => c !== b && !related.has(c.name) && Date.parse(c.date) > now - 14 * DAY)
+      .map((c) => ({ name: nameOf(c.name), files: (c.files || []).filter((f) => mine.has(f)) })).filter((c) => c.files.length)
+      .sort((x, y) => y.files.length - x.files.length).slice(0, 6);
     const base = {
-      id: `${state.name}:${b.name}`, who, stale, date: Date.parse(b.date),
+      id: `${state.name}:${b.name}`, who, stale, date: Date.parse(b.date), branchName: b.name,
+      details: {
+        builtOn: parents.map(nameOf), builtOnIt: (children.get(b.name) || []).map(nameOf),
+        folder: wt ? { path: wt.path, changed: wt.changed || 0 } : null,
+        aliases: b.aliases || [], files: (b.files || []).length, mayClash,
+      },
       signals: { active: active ? `You’re working on this: folder ${active.path.split(/[\\/]/).pop()}, touched ${since(active.touched, now)} ago` : null, human: humans.length ? `Commits by ${[...new Set(humans)].join(", ")}` : null },
       preview: preview ? { href: preview.url, label: "Preview site" } : null,
       buildLog: preview && preview.logUrl ? { href: preview.logUrl, label: "Vercel build log" } : null,
@@ -252,8 +265,8 @@ export function recommend(state, { people = {}, bundle = true, now = Date.now(),
       };
       if (pr.isDraft) Object.assign(row, { note: "Draft — mark it ready when the work is done", action: { kind: "link", label: "Open on GitHub", href: pr.url }, facts: mergeFacts, group: stale ? "stale" : "also", colour: stale ? "slate" : "blue" });
       else if (parents.length) Object.assign(row, { colour: "grey", group: "waiting", note: `Built on ${parents.map(nameOf).join(", ")} — waits for it`, action: { kind: "wait", label: `Nothing yet — ${parents.map(nameOf).join(", ")} first` }, facts: mergeFacts });
-      else if (pr.mergeable === "CONFLICTING") Object.assign(row, { conflict: true, note: `Conflict — the same lines changed on ${main}`, action: { kind: "prompt", label: "Hand to Claude", prompt: `Pull request #${pr.number} (${pr.url}) has a merge conflict with ${main}. Explain in plain words what clashes, then resolve it on branch ${b.name} and push — ask me before choosing between two versions of the same change.` }, sub: { text: "to resolve the conflict" }, facts: mergeFacts });
-      else if (c.failed.length) Object.assign(row, { colour: "red", note: `${plural(c.failed.length, "check")} failed`, action: { kind: "link", label: "See what failed", href: c.failed[0].detailsUrl || c.failed[0].targetUrl || pr.url }, facts: mergeFacts });
+      else if (pr.mergeable === "CONFLICTING") Object.assign(row, { conflict: true, stuck: "conflict", prNumber: pr.number, note: `Conflict — the same lines changed on ${main}`, action: { kind: "prompt", label: "Hand to Claude", prompt: `Pull request #${pr.number} (${pr.url}) has a merge conflict with ${main}. Explain in plain words what clashes, then resolve it on branch ${b.name} and push — ask me before choosing between two versions of the same change.` }, sub: { text: "to resolve the conflict" }, facts: mergeFacts });
+      else if (c.failed.length) Object.assign(row, { colour: "red", stuck: "checks", prNumber: pr.number, failed: c.failed.map((x) => x.name || x.context).filter(Boolean), note: `${plural(c.failed.length, "check")} failed`, action: { kind: "link", label: "See what failed", href: c.failed[0].detailsUrl || c.failed[0].targetUrl || pr.url }, facts: mergeFacts });
       else if (c.pending) Object.assign(row, { running: true, note: "GitHub is running checks…", action: { kind: "wait", label: "Wait for the checks" }, facts: mergeFacts });
       else if (copyOf) Object.assign(row, { dim: true, next: 6, note: `Looks like an older copy of ${nameOf(copyOf)}`, action: { kind: "link", label: "Compare first", href: url(`/compare/${encodeURIComponent(b.name)}...${encodeURIComponent(copyOf)}`) }, facts: mergeFacts });
       else if (b.behind > 0 && pr.mergeable === "MERGEABLE") Object.assign(row, { next: 6, note: `${plural(b.behind, "commit")} behind ${main} — update, then merge`, action: { kind: "copy", label: "Update from main", command: `gh pr update-branch ${pr.number}` }, facts: { ...mergeFacts, command: `gh pr update-branch ${pr.number}` } });
@@ -296,12 +309,26 @@ export function recommend(state, { people = {}, bundle = true, now = Date.now(),
     if (g.action && g.action.kind === "copy") g.action.primary = true;
     for (const o of cands.slice(1)) o.alsoFine = true;
   }
+  const dependents = (name) => (children.get(name) || []).length;
+  for (const r of rows) if (r.stuck) r.dependents = dependents(r.branchName);
   return { rows: order(rows), tidy };
+}
+
+// Within a group, work closest to live comes first.
+function rank(r) {
+  if (r.greenable === "merge") return 0;
+  if (r.action && r.action.label === "Update from main") return 1;
+  if (r.stuck || r.running) return 2;
+  if (r.greenable === "push") return 3;
+  if (r.greenable === "draft") return 4;
+  if (r.kind === "draft") return 5;
+  if (r.kind === "folder") return 7;
+  return 6;
 }
 
 const GROUP_ORDER = { done: 0, next: 1, also: 2, waiting: 3, stale: 4 };
 function order(rows) {
-  return rows.sort((a, b) => GROUP_ORDER[a.group] - GROUP_ORDER[b.group] || (b.greenable ? 1 : 0) - (a.greenable ? 1 : 0));
+  return rows.sort((a, b) => GROUP_ORDER[a.group] - GROUP_ORDER[b.group] || rank(a) - rank(b) || (b.date || 0) - (a.date || 0));
 }
 
 // Short summary for the terminal and for "Needs you" lines in chat.
@@ -311,4 +338,37 @@ export function summarise(repos) {
     const best = r.rows.find((x) => x.best);
     return { name: r.name, needsYou: act.length, stale: r.rows.filter((x) => x.group === "stale").length, best: best ? `${best.action.label}: ${best.title}` : null };
   });
+}
+
+// The headline: what has happened today and what is waiting, in facts, never instructions.
+export function headline(rows) {
+  const done = rows.filter((r) => r.group === "done");
+  const live = done.filter((r) => r.live === "live").length;
+  const stuck = rows.filter((r) => r.stuck).length;
+  const ready = rows.filter((r) => r.greenable === "merge").length;
+  const waiting = rows.filter((r) => r.group !== "done" && r.group !== "stale" && r.colour !== "grey").length;
+  const first = live ? `${live} went live today.` : done.length ? `${done.length} merged today.` : waiting ? "Nothing new today." : "All clear.";
+  const parts = [];
+  if (stuck) parts.push(`${stuck} ${stuck === 1 ? "is" : "are"} stuck`);
+  if (ready) parts.push(`${ready} ${ready === 1 ? "is" : "are"} ready to merge`);
+  if (!parts.length && waiting && waiting !== done.length) parts.push(`${waiting} waiting`);
+  const second = parts.length ? parts.join(", ").replace(/, ([^,]*)$/, " and $1") + "." : "";
+  return { first, second: second.charAt(0).toUpperCase() + second.slice(1) };
+}
+
+// One prompt for every stuck pull request, in a safe order: work that others are
+// built on first, then oldest number first. `clashesFor(row)` gives each one's clash text.
+export function stuckPrompt(rows, clashesFor = () => "", { path: repoPath = "", main = "main" } = {}) {
+  const stuck = rows.filter((r) => r.stuck).sort((a, b) => (b.dependents || 0) - (a.dependents || 0) || a.prNumber - b.prNumber);
+  if (!stuck.length) return null;
+  const items = stuck.map((r, i) => {
+    const why = r.stuck === "conflict" ? `merge conflict with ${main}` : `failed checks${r.failed && r.failed.length ? ` (${r.failed.join(", ")})` : ""}`;
+    const clash = r.stuck === "conflict" ? clashesFor(r) : "";
+    return `${i + 1}. #${r.prNumber} "${r.title}" on branch ${r.branchName}: ${why}${r.dependents ? `. ${plural(r.dependents, "other branch", "other branches")} built on it` : ""}.${r.href ? ` ${r.href}` : ""}${clash ? `\n   The lines that clash (from a test merge):\n${clash.replace(/^/gm, "   ")}` : ""}`;
+  });
+  return `These ${plural(stuck.length, "pull request")} in ${repoPath} can't move on. Fix them one at a time, in this order:
+
+${items.join("\n\n")}
+
+For each one: explain in plain words what is wrong, then fix it on its own branch and push. For a conflict, ask me before choosing between two versions of the same change. For failed checks, read the failure first and fix the cause, not the check. Don't merge anything. Stop and tell me if a fix would change what the pull request is for.`;
 }
