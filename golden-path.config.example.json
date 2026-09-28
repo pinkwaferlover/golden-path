@@ -4,7 +4,8 @@
   "actions": false,
   "repos": [
     { "name": "my-app", "path": "/path/to/my-app", "liveUrl": "https://my-app.example.com/" },
-    { "name": "another-repo", "path": "/path/to/another-repo" }
+    { "name": "another-repo", "path": "/path/to/another-repo",
+      "releases": [{ "name": "MVP", "tasks": ["MVP", "MVP.*", "1.5.6"] }] }
   ],
   "people": {
     "your-github-login": "Your name",

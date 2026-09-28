@@ -33,6 +33,8 @@ Open <http://127.0.0.1:4777>. There is nothing to install: it has no dependencie
 
 **On your phone, privately.** With [Tailscale](https://tailscale.com) on your computer and phone, run `tailscale serve --bg 4777`, then add your computer's Tailscale name to the settings: `"extraHosts": ["my-pc.tailnet-name.ts.net"]`. Open `https://my-pc.tailnet-name.ts.net` on your phone. Only your own devices can reach it, and Golden Path still listens on this computer only.
 
+**Releases, if you group work that way.** Give a repo a `releases` list in the settings, each with a name and the task IDs it covers: `"releases": [{ "name": "MVP", "tasks": ["MVP", "MVP.*", "1.5.6"] }]`. A task ID ending in `*` matches any ID starting that way; any other ID must match exactly, so `1.5.6` never claims `1.5.60`. The page then shows **All work** and **Release: MVP** chips above the rows. Choosing a release shows only work whose commits carry one of its `Task:` lines (see [the bundle](#the-optional-bundle)), and says so if the best next step overall sits outside it. Just-merged work and uncommitted folders have no commits to read, so they only show under All work. Use lasting IDs such as epic numbers: a date-based ID like `T-20260926-1` can be picked by several sessions on the same day for unrelated work.
+
 - `npm run summary` prints one line per repo: what needs you, and a link.
 - `npm test` runs the tests.
 

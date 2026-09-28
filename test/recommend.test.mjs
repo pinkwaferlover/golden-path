@@ -2,6 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { recommend, prettyModel, whoLine } from "../src/recommend.mjs";
+import { allowed } from "../src/actions.mjs";
 
 const NOW = Date.parse("2026-09-25T22:30:00Z");
 const recent = "2026-09-25T20:00:00Z";
@@ -123,4 +124,53 @@ test("a branch that tracks main is pushed to its own name, never onto main", () 
   const { rows } = run(base({ branches: [b] }));
   const r = rows.find((x) => x.branchLine.startsWith("session/fix"));
   assert.equal(r.action.command, "git push -u origin session/fix");
+});
+
+test("a branch only on GitHub gets a draft command with its title given, since --fill can't read it", () => {
+  const { rows } = run(base({ branches: [branch("claude/remote-only", { subject: "fix(intake): stop guessing" })] }));
+  const r = rows.find((x) => x.greenable === "draft");
+  assert.equal(r.colour, "green");
+  assert.equal(r.action.command, 'gh pr create --draft --head claude/remote-only --title "fix(intake): stop guessing" --body "Opened from Golden Path."');
+  assert.ok(allowed(r.action.command), "Run it accepts it");
+});
+
+test("a local branch with several commits is titled after the newest one, not the branch name", () => {
+  const b = branch("claude/many", { local: true, localSha: "l", unpushed: 0, ahead: 20, subject: "Create handoff briefing" });
+  const { rows } = run(base({ branches: [b] }));
+  assert.match(rows.find((x) => x.greenable === "draft").action.command, /--title "Create handoff briefing"/);
+});
+
+test("a local branch with one commit keeps --fill, which brings the commit's body too", () => {
+  const b = branch("claude/one", { local: true, localSha: "l", unpushed: 0 });
+  const { rows } = run(base({ branches: [b] }));
+  assert.equal(rows.find((x) => x.greenable === "draft").action.command, "gh pr create --draft --fill --head claude/one");
+});
+
+test("a row is tagged with the releases its commits' Task trailers belong to", () => {
+  const releases = [{ name: "MVP", tasks: ["MVP", "MVP.*", "1.5.6"] }, { name: "Later", tasks: ["SO.*"] }];
+  const tasks = (t) => ({ ...branch("x").who, tasks: t });
+  const inMvp = branch("feedback-api", { who: tasks({ "MVP.5": 2 }) });
+  const epic = branch("mcp-server", { who: tasks({ "1.5.6": 1 }) });
+  const near = branch("mcp-docs", { who: tasks({ "1.5.60": 1 }) });
+  const other = branch("ledger", { who: tasks({ "SO.0": 1 }) });
+  const none = branch("untagged", { who: tasks({}) });
+  const { rows } = run(base({ branches: [inMvp, epic, near, other, none] }), { releases });
+  const tagOf = (n) => rows.find((x) => x.branchLine.startsWith(n)).releases;
+  assert.deepEqual(tagOf("feedback-api"), ["MVP"]);
+  assert.deepEqual(tagOf("mcp-server"), ["MVP"]);
+  assert.deepEqual(tagOf("mcp-docs"), [], "an exact ID never matches a longer one");
+  assert.deepEqual(tagOf("ledger"), ["Later"]);
+  assert.deepEqual(tagOf("untagged"), []);
+});
+
+test("without releases in the settings, rows carry an empty list", () => {
+  const { rows } = run(base({ branches: [branch("a")] }));
+  assert.deepEqual(rows[0].releases, []);
+});
+
+test("every kind of row carries a releases list, including just-merged ones", () => {
+  const merged = [{ number: 5, title: "PR 5", headRefName: "done-work", mergedAt: "2026-09-25T21:00:00Z", mergeCommit: { oid: "m" }, url: "u", author: { login: "sam-example" } }];
+  const { rows } = run(base({ merged, branches: [branch("a")] }), { releases: [{ name: "MVP", tasks: ["T-1"] }] });
+  assert.ok(rows.length >= 2);
+  for (const r of rows) assert.ok(Array.isArray(r.releases), `${r.kind} row has a list`);
 });

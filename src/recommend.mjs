@@ -2,6 +2,8 @@
 // Pure: no git, no network. Every claim it makes comes from the collected facts;
 // anything it can only guess at is worded "looks like" and never goes green.
 
+import { prTitle, PR_BODY } from "./actions.mjs";
+
 export const STAGES = ["Changed", "Staged", "Committed", "Pushed", "Pull request", "Checks pass", "Merged", "Live"];
 const DAY = 864e5;
 
@@ -20,6 +22,14 @@ const plural = (n, one, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 const cleanSubject = (s) => (s || "").replace(/^\w+(\([^)]*\))?!?:\s*/, "").replace(/\s*\([A-Z]+[\w.-]*\)\s*$/, "").replace(/^./, (c) => c.toUpperCase());
 const ago = (ms, now) => Math.floor((now - ms) / DAY);
 const since = (ms, now) => { const m = Math.max(1, Math.round((now - ms) / 6e4)); return m < 60 ? plural(m, "minute") : m < 1440 ? plural(Math.round(m / 60), "hour") : plural(Math.round(m / 1440), "day"); };
+
+// Which releases a piece of work belongs to, read from its commits' Task: trailers.
+// A pattern is an exact task ID ("1.5.6") or a prefix ending in * ("MVP.*"). Exact IDs
+// never match a longer one, so "1.5.6" does not claim "1.5.60".
+export function releasesFor(tasks, releases) {
+  const hit = (p, t) => (p.endsWith("*") ? t.startsWith(p.slice(0, -1)) : t === p);
+  return (releases || []).filter((r) => (r.tasks || []).some((p) => tasks.some((t) => hit(p, t)))).map((r) => r.name);
+}
 
 function person(name, people) {
   if (!name) return null;
@@ -74,7 +84,7 @@ function checks(pr) {
   return { total: roll.length, failed, pending: !failed.length && pending, passed, ok: roll.length > 0 ? !failed.length && !pending : true, none: roll.length === 0 };
 }
 
-export function recommend(state, { people = {}, bundle = true, now = Date.now(), dismissed = [] } = {}) {
+export function recommend(state, { people = {}, bundle = true, now = Date.now(), dismissed = [], releases = [] } = {}) {
   const rows = [];
   const tidy = [];
   const gh = state.github;
@@ -95,7 +105,7 @@ export function recommend(state, { people = {}, bundle = true, now = Date.now(),
     const t = new Date(dep && dep.state === "success" ? dep.created : mergedAt);
     const hhmm = t.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
     rows.push({
-      id: `${state.name}#${m.number}`, kind: "merged", colour: live === "failed" ? "red" : "green", group: "done",
+      id: `${state.name}#${m.number}`, releases: [], kind: "merged", colour: live === "failed" ? "red" : "green", group: "done",
       tag: `PULL REQUEST #${m.number} · MERGED${live === "live" ? " · LIVE" : ""}`, title: m.title, href: m.url,
       branchLine: `branch ${m.headRefName}`,
       who: m.author && (m.author.is_bot || /^app\//.test(m.author.login || "")) ? whoLine({ prAuthor: m.author }, { people, bundle }) : [{ t: "Opened by " }, { t: person(m.author && m.author.login, people) || "someone", b: true }],
@@ -124,7 +134,7 @@ export function recommend(state, { people = {}, bundle = true, now = Date.now(),
     const allStaged = w.unstaged === 0;
     const never = state.neverCommitted;
     rows.push({
-      id: `${state.name}:wt:${w.path}`, kind: "folder", colour: stale ? "slate" : "blue", group: stale ? "stale" : "also",
+      id: `${state.name}:wt:${w.path}`, releases: [], kind: "folder", colour: stale ? "slate" : "blue", group: stale ? "stale" : "also",
       tag: never ? "FOLDER · NEVER COMMITTED" + (state.hasRemote ? "" : " · NOT ON GITHUB") : `CHANGES NOT YET COMMITTED${w.branch ? " · ON " + w.branch : ""}`,
       title: never ? "Work that has never been saved as a commit" : w.also.length ? `The same ${plural(w.changed, "file")} changed in ${w.also.length + 1} folders` : `${plural(w.changed, "changed file")} in ${w.path.split(/[\\/]/).pop()}`,
       folders: [w.path, ...w.also.map((x) => x.path)],
@@ -280,7 +290,12 @@ export function recommend(state, { people = {}, bundle = true, now = Date.now(),
 
     // Pushed, no pull request.
     const row = { ...base, kind: "branch", tag: "BRANCH · NO PULL REQUEST", title: cleanSubject(b.subject), branchLine: `${b.name} · ${aheadBehind}${alias}`, reached: 3, next: 4, colour: "blue", group: "also" };
-    const prCmd = `gh pr create --draft --fill --head ${b.name}`;
+    // --fill only works when the branch is on this computer, and with several commits it
+    // titles the pull request after the branch name. Otherwise name the newest commit.
+    const title = prTitle(b.subject);
+    const prCmd = (!b.local || b.ahead > 1) && title
+      ? `gh pr create --draft --head ${b.name} --title "${title}" --body "${PR_BODY}"`
+      : `gh pr create --draft --fill --head ${b.name}`;
     const facts = {
       why: [
         { ok: true, t: "A draft pull request changes nothing — it only makes the work visible and checked" },
