@@ -188,6 +188,9 @@ export async function collectRepo(repoCfg, { fetch = true } = {}) {
     b.who = await authorship(cwd, `${out.mainRef}..${b.tip}`);
     const s = await git(cwd, "log", "--format=%s", `${out.mainRef}..${b.tip}`);
     b.subjects = s.out.split(/\r?\n/).filter(Boolean);
+    // Files the branch changes since it left main, for "may clash" hints.
+    const f = await git(cwd, "diff", "--name-only", `${out.mainRef}...${b.tip}`);
+    b.files = f.ok ? f.out.split(/\r?\n/).filter(Boolean) : [];
   }));
   for (const b of shown) {
     b.parents = [];
@@ -200,4 +203,19 @@ export async function collectRepo(repoCfg, { fetch = true } = {}) {
   out.branches = list;
   out.worktreeByBranch = Object.fromEntries(worktrees.filter((w) => w.branch).map((w) => [w.branch, w]));
   return out;
+}
+
+// A test merge of a branch into main, done inside git's object store only: no folder,
+// branch or index changes. Returns the clashing files with their conflict-marked text.
+export async function testMerge(cwd, mainRef, tip) {
+  const m = await git(cwd, "merge-tree", "--write-tree", "--name-only", "--no-messages", mainRef, tip);
+  const lines = m.out.split(/\r?\n/).filter(Boolean);
+  if (m.ok) return { clean: true, files: [] };
+  if (!lines.length || !/^[0-9a-f]{40,64}$/.test(lines[0])) return { error: m.err.trim() || "git could not test the merge" };
+  const tree = lines[0];
+  const files = await Promise.all([...new Set(lines.slice(1))].slice(0, 20).map(async (p) => {
+    const f = await git(cwd, "show", `${tree}:${p}`);
+    return { path: p, text: f.ok ? f.out : null };
+  }));
+  return { clean: false, files };
 }

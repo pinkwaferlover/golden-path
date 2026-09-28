@@ -121,11 +121,42 @@ function rowHtml(r) {
   const title = r.href ? `<a class="title" href="${esc(r.href)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : `<span class="title" style="${r.colour === "grey" ? "color:#5E5A50" : ""}">${esc(r.title)}</span>`;
   const kind = r.kind === "merged" ? "merged" : r.kind;
   return `<div class="row ${r.kind === "folder" ? "folder" : ""}" data-id="${esc(r.id)}">
-<div class="label">${icon(kind, c)}<div class="txt"><span class="tag" style="color:${r.colour === "grey" ? "#6B665B" : c}">${esc(r.tag)}</span>${title}<span class="branch">${esc(r.branchLine)}</span><span class="who">${whoHtml(r.who)}</span></div></div>
+<div class="label">${icon(kind, c)}<div class="txt"><span class="tag" style="color:${r.colour === "grey" ? "#6B665B" : c}">${esc(r.tag)}</span>${title}<span class="branch">${esc(r.branchLine)}</span><span class="who">${whoHtml(r.who)}</span>${r.details ? `<button type="button" class="link-btn more" data-details="${esc(r.id)}" aria-expanded="${openDetails.has(r.id)}">${openDetails.has(r.id) ? "Hide details" : "Details"} ›</button>` : ""}</div></div>
 <div class="track" data-id="${esc(r.id)}"></div>${mini(r)}
 ${actionHtml(r)}
 ${factsHtml(r)}
+${r.details && openDetails.has(r.id) ? detailsHtml(r) : ""}
 </div>`;
+}
+
+// Details: what else touches this work and, when it is stuck on a conflict, the lines that clash.
+const openDetails = new Set();
+const clashCache = new Map();
+function detailsHtml(r) {
+  const d = r.details, li = (items) => items.map((x) => `<li>${x}</li>`).join("");
+  const rel = [];
+  if (d.builtOn.length) rel.push(`Built on ${d.builtOn.map((n) => `<strong>${esc(n)}</strong>`).join(", ")}, which goes first`);
+  if (d.builtOnIt.length) rel.push(`${d.builtOnIt.map((n) => `<strong>${esc(n)}</strong>`).join(", ")} ${d.builtOnIt.length === 1 ? "is" : "are"} built on this, and wait for it`);
+  if (d.folder) rel.push(`Checked out in <code>${esc(d.folder.path)}</code>${d.folder.changed ? `, with ${d.folder.changed} changed ${d.folder.changed === 1 ? "file" : "files"} not yet committed` : ", nothing uncommitted"}`);
+  else rel.push("Not checked out in any folder on this computer");
+  if (d.aliases.length) rel.push(`Also called ${d.aliases.map((a) => `<code>${esc(a)}</code>`).join(", ")} (same commit)`);
+  const may = d.mayClash.length ? `<h3>May clash later</h3><p class="hint">Other open work that changes some of the same files. This is a guess from file names, not a test merge.</p><ul>${li(d.mayClash.map((c) => `<strong>${esc(c.name)}</strong>: ${c.files.slice(0, 4).map((f) => `<code>${esc(f)}</code>`).join(", ")}${c.files.length > 4 ? ` and ${c.files.length - 4} more` : ""}`))}</ul>` : "";
+  let clash = "";
+  if (r.stuck === "conflict") {
+    const c = clashCache.get(r.id);
+    clash = `<h3>What clashes with ${esc(currentRepo().main || "main")}</h3>${!c ? `<p class="hint">Doing a test merge. It touches no folder or branch…</p>` : c.error ? `<p class="hint">${esc(c.error)}</p>` : c.clean ? "<p class=\"hint\">A test merge now goes through cleanly. GitHub may not have caught up yet.</p>" : c.files.map(fileClashHtml).join("")}`;
+  }
+  return `<div class="details"><h3>What else touches it</h3><ul>${li(rel)}</ul>${may}${clash}</div>`;
+}
+function fileClashHtml(f) {
+  if (!f.clashes.length) return `<div class="clash-file"><code>${esc(f.path)}</code><p class="hint">Changed in a way that can’t be merged line by line, for example deleted on one side and edited on the other.</p></div>`;
+  const lines = (ls) => ls.map((l) => esc(l) || " ").join("\n");
+  return `<div class="clash-file"><code>${esc(f.path)}</code> · ${f.clashes.length} ${f.clashes.length === 1 ? "clash" : "clashes"}${f.clashes.map((c) => `<div class="clash"><div class="where">around line ${c.line}</div>${c.before.length ? `<pre class="ctx">${lines(c.before)}</pre>` : ""}<div class="sides"><div><b>${esc(currentRepo().main || "main")} has</b><pre>${c.main.length ? lines(c.main) : "(nothing)"}</pre></div><div><b>this branch has</b><pre>${c.branch.length ? lines(c.branch) : "(nothing)"}</pre></div></div>${c.after.length ? `<pre class="ctx">${lines(c.after)}</pre>` : ""}</div>`).join("")}</div>`;
+}
+const currentRepo = () => state.repos.find((r) => r.name === current) || state.repos[0];
+
+function glossaryHtml() {
+  return `<summary>What do these words mean? ›</summary><dl>${STOPS.map((s) => `<dt>${esc(s.n)}${s.auto ? "" : ` <code>${esc(s.cmd)}</code>`}</dt><dd>${esc(s.tip)} <a href="${esc(s.href)}" target="_blank" rel="noopener">${esc(s.ref)} ↗</a></dd>`).join("")}</dl>`;
 }
 
 function headerHtml() {
@@ -164,6 +195,9 @@ async function render() {
     return `<button type="button" class="repo" data-repo="${esc(r.name)}" aria-current="${r.name === current}"><span class="dot" style="background:${k.colour}"></span><span><strong>${esc(r.name)}</strong><small style="color:${k.colour}">${esc(k.text)}</small></span></button>`;
   }).join("");
   document.getElementById("repo-name").textContent = repo.name;
+  const h = repo.headline || { first: "", second: "" };
+  document.getElementById("headline").innerHTML = `${esc(h.first)}${h.second ? ` <span class="second">${esc(h.second)}</span>` : ""}`;
+  document.title = `${h.first} ${h.second} · ${repo.name} · Golden Path`.replace(/\s+/g, " ");
   const p = repo.production;
   const t = (iso) => new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
   document.getElementById("live").innerHTML = p
@@ -172,6 +206,8 @@ async function render() {
     : `<div class="live"><span class="gdot" style="background:#D9D3C4"></span><span class="meta">This folder isn’t on GitHub.</span></div>`;
   document.getElementById("errors").innerHTML = repo.errors.filter((e) => e !== "Not a git repository").map((e) => `<div class="errors">${esc(e)}</div>`).join("");
 
+  const stuck = repo.rows.filter((r) => r.stuck);
+  document.getElementById("stuck").innerHTML = stuck.length ? `<div class="stuck"><span class="rdot"></span><span><strong>${stuck.length} pull ${stuck.length === 1 ? "request is" : "requests are"} stuck:</strong> ${stuck.map((r) => `<a href="${esc(r.href)}" target="_blank" rel="noopener">#${r.prNumber}</a> ${r.stuck === "conflict" ? "conflict" : "checks failed"}`).join(" · ")}</span><button type="button" class="btn" data-stuck>Hand all stuck PRs to Claude</button></div>` : "";
   const dismissed = store.get(dismissedKey, []);
   let release = store.get(releaseKey(repo.name), "");
   if (release && !(repo.releases || []).includes(release)) release = "";
@@ -186,7 +222,12 @@ async function render() {
   } else {
     html = headerHtml();
     let last = null;
-    for (const r of active) {
+    const done = active.filter((r) => r.group === "done");
+    if (done.length) {
+      const live = done.filter((r) => r.live === "live").length;
+      html += `<details class="done-box"><summary>Done today: ${done.length} merged${live ? ` · ${live} live` : ""} ›</summary>${done.map(rowHtml).join("")}</details>`;
+    }
+    for (const r of active.filter((x) => x.group !== "done")) {
       if (r.group !== last) { html += `<div class="group-label">${esc(GROUPS[r.group] || "")}</div>`; last = r.group; }
       html += rowHtml(r);
     }
@@ -195,6 +236,8 @@ async function render() {
   document.getElementById("board").innerHTML = html;
   layout();
   document.getElementById("legend").innerHTML = `<span><span style="color:${COL.green}">●</span> Best next step</span><span><span style="color:${COL.blue}">○</span> Also reasonable</span><span><span style="color:${COL.grey}">●</span> Waiting on something earlier</span><span><span style="color:${COL.slate}">○</span> Older — decide</span><span><span style="color:${COL.red}">●</span> Needs fixing</span><span>Single line = branch · double line = pull request</span><span class="end">${repo.tidy.length ? `${repo.tidy.length} branches already in ${esc(repo.main)} (tidy-ups)` : ""}${state.bundle ? "" : " · bundle off"}</span>`;
+  const g = document.getElementById("glossary");
+  if (!g.innerHTML) g.innerHTML = glossaryHtml();
   document.getElementById("checked").textContent = `Checked ${new Date(state.checkedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
 }
 
@@ -241,48 +284,66 @@ let toCopy = "", toRun = null;
 document.addEventListener("click", async (e) => {
   const repoBtn = e.target.closest("[data-repo]");
   if (repoBtn) { current = repoBtn.dataset.repo; store.set("gp.repo", current); localStorage.setItem("gp.repo", current); closeRail(); return render(); }
-  const chip = e.target.closest("[data-release]");
-  if (chip) { store.set(releaseKey(current), chip.dataset.release); return render(); }
+  const det = e.target.closest("[data-details]");
+  if (det) {
+    const id = det.dataset.details;
+    if (openDetails.has(id)) openDetails.delete(id); else openDetails.add(id);
+    const row = currentRepo().rows.find((r) => r.id === id);
+    if (openDetails.has(id) && row && row.stuck === "conflict" && !clashCache.has(id)) {
+      fetch(`/api/clash?repo=${encodeURIComponent(current)}&row=${encodeURIComponent(id)}`).then((r) => r.json()).catch((x) => ({ error: String(x) })).then((c) => { clashCache.set(id, c); render(); });
+    }
+    return render();
+  }
+  if (e.target.closest("[data-stuck]")) {
+    const btn = e.target.closest("[data-stuck]");
+    btn.disabled = true; btn.textContent = "Doing test merges…";
+    const res = await fetch(`/api/stuck-prompt?repo=${encodeURIComponent(current)}`).then((r) => r.json()).catch(() => ({}));
+    btn.disabled = false; btn.textContent = "Hand all stuck PRs to Claude";
+    if (!res.prompt) return;
+    openDialog("Hand all stuck PRs to Claude", `<p>Copy this into your AI coding tool, in a session opened in <code>${esc(currentRepo().path)}</code>. It lists each stuck pull request, in a safe order, with the lines that clash:</p><pre>${esc(res.prompt)}</pre>`, res.prompt, null);
+    return;
+  }
   const b = e.target.closest("[data-act]");
   if (!b) return;
   const repo = state.repos.find((r) => r.name === current);
   const row = repo.rows.find((r) => r.id === b.dataset.act);
   const a = row.action;
   if (a.kind === "dismiss") { store.set(dismissedKey, [...store.get(dismissedKey, []), row.id]); return render(); }
-  const title = document.getElementById("dlg-title"), body = document.getElementById("dlg-body");
-  toRun = actionsOn && a.kind === "copy" ? { repo: repo.name, rowId: row.id } : null;
-  runBtn.hidden = !toRun; runBtn.disabled = false; runBtn.textContent = "Run it";
-  copyBtn.className = toRun ? "btn" : "btn primary";
-  if (a.kind === "copy") {
-    title.textContent = a.label;
-    toCopy = a.command;
-    body.innerHTML = `<p><strong>What this will do:</strong> ${esc(row.facts ? row.facts.happens : "")}</p>${row.facts ? `<p><strong>If you don’t:</strong> ${esc(row.facts.ifNot)}</p>` : ""}<p>Run this in a terminal in <code>${esc(repo.path)}</code>:</p><pre>${esc(a.command)}</pre><p style="color:#5E5A50;font-size:13px">${toRun ? "“Run it” runs exactly this command, once, then Golden Path checks git again." : "Golden Path shows the exact command, so nothing happens without you."}</p>`;
-  } else if (a.kind === "prompt") {
-    title.textContent = "Hand to Claude";
-    toCopy = a.prompt;
-    body.innerHTML = `<p>Copy this into your AI coding tool, in a session opened in <code>${esc(repo.path)}</code>:</p><pre>${esc(a.prompt)}</pre>`;
-  }
-  document.getElementById("dlg-copy").textContent = "Copy";
-  dlg.showModal();
+  const run = actionsOn && a.kind === "copy" ? { repo: repo.name, rowId: row.id } : null;
+  if (a.kind === "copy") openDialog(a.label, `<p><strong>What this will do:</strong> ${esc(row.facts ? row.facts.happens : "")}</p>${row.facts ? `<p><strong>If you don’t:</strong> ${esc(row.facts.ifNot)}</p>` : ""}<p>Run this in a terminal in <code>${esc(repo.path)}</code>:</p><pre>${esc(a.command)}</pre><p style="color:#5E5A50;font-size:13px">${run ? "“Run it” runs exactly this command, once, then Golden Path checks git again." : "Golden Path shows the exact command, so nothing happens without you."}</p>`, a.command, run);
+  else if (a.kind === "prompt") openDialog("Hand to Claude", `<p>Copy this into your AI coding tool, in a session opened in <code>${esc(repo.path)}</code>:</p><pre>${esc(a.prompt)}</pre>`, a.prompt, null);
 });
-document.getElementById("dlg-copy").addEventListener("click", async (e) => {
+const closeBtn = document.getElementById("dlg-close");
+function openDialog(title, bodyHtml, copyText, run) {
+  document.getElementById("dlg-title").textContent = title;
+  document.getElementById("dlg-body").innerHTML = bodyHtml;
+  toCopy = copyText; toRun = run;
+  runBtn.hidden = !run; runBtn.disabled = false; runBtn.textContent = "Run it";
+  copyBtn.hidden = false; copyBtn.textContent = "Copy"; copyBtn.className = run ? "btn" : "btn primary";
+  closeBtn.className = "btn";
+  dlg.showModal();
+}
+copyBtn.addEventListener("click", async (e) => {
   try { await navigator.clipboard.writeText(toCopy); e.target.textContent = "Copied ✓"; } catch { e.target.textContent = "Select the text above to copy"; }
 });
+// After a run: success leaves only a green Close (the board rechecks git and the row moves on);
+// a failure says so and keeps Copy, so you can run it yourself.
 runBtn.addEventListener("click", async () => {
   if (!toRun) return;
   runBtn.disabled = true; runBtn.textContent = "Running…";
   const out = document.createElement("pre");
+  let ok = false;
   try {
     const r = await fetch("/api/action", { method: "POST", headers: { "content-type": "application/json", "x-gp-token": meta("gp-token") }, body: JSON.stringify(toRun) });
     const res = r.headers.get("content-type")?.includes("json") ? await r.json() : { ok: false, output: await r.text() };
-    runBtn.textContent = res.ok ? "Done ✓" : "Didn’t work";
-    // Lead with the reason in plain words; keep git's own output folded underneath.
-    out.textContent = String(res.output || "").replace(/\x1b\[[0-9;]*m|\[\d+(;\d+)*m/g, "");
-    if (res.why || !res.ok) { const why = document.createElement("p"); why.className = "why"; why.textContent = res.why || "It didn’t work. Git’s own words are below."; document.getElementById("dlg-body").append(why); }
-  } catch (e) { runBtn.textContent = "Didn’t work"; out.textContent = String(e); }
-  const fold = document.createElement("details"), sum = document.createElement("summary");
-  sum.textContent = "Full output"; fold.append(sum, out);
-  document.getElementById("dlg-body").append(fold);
+    ok = res.ok; out.textContent = res.output;
+  } catch (e) { out.textContent = String(e); }
+  const note = document.createElement("p");
+  note.className = ok ? "ran ok" : "ran no";
+  note.textContent = ok ? "✓ Done. Golden Path is checking git again." : "✗ Didn’t work. Nothing else was run.";
+  document.getElementById("dlg-body").append(note, out);
+  runBtn.hidden = true;
+  if (ok) { copyBtn.hidden = true; closeBtn.className = "btn primary"; closeBtn.focus(); }
   toRun = null;
   load(true);
 });

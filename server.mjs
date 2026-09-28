@@ -11,9 +11,10 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
-import { collectRepo } from "./src/collect.mjs";
-import { recommend } from "./src/recommend.mjs";
-import { allowed, timeoutFor, explain } from "./src/actions.mjs";
+import { collectRepo, testMerge } from "./src/collect.mjs";
+import { recommend, stuckPrompt, headline } from "./src/recommend.mjs";
+import { clashes, clashText } from "./src/clash.mjs";
+import { allowed } from "./src/actions.mjs";
 import { renderScene, renderVignette } from "./src/scene/scene.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -25,8 +26,8 @@ export async function loadConfig() {
 }
 
 let cache = { at: 0, data: null, pending: null };
-export async function gather(cfg, { refresh = false } = {}) {
-  if (!refresh && cache.data && Date.now() - cache.at < 30_000) return cache.data;
+export async function gather(cfg, { refresh = false, cached = false } = {}) {
+  if (!refresh && cache.data && (cached || Date.now() - cache.at < 30_000)) return cache.data;
   if (cache.pending) return cache.pending;
   cache.pending = (async () => {
     const repos = await Promise.all(cfg.repos.map(async (r) => {
@@ -54,7 +55,7 @@ function view(data, cfg, { bundle, dismissed }) {
       return {
         name: s.name, path: s.path, main: s.main, github: s.github, errors: s.errors || [], hasRemote: s.hasRemote,
         liveUrl: s.liveUrl, production: s.production || null, hasDeploys: !!(s.deployments && s.deployments.length),
-        rows, tidy, releases: releases.map((r) => r.name),
+        rows, tidy, headline: headline(rows),
       };
     }),
   };
@@ -104,6 +105,18 @@ async function action(cfg, { repo: name, rowId }, busy) {
   }
 }
 
+// The clashes of one stuck row, from a test merge that touches no folder or branch.
+async function clashesOf(s, row) {
+  const b = (s.branches || []).find((x) => x.name === row.branchName);
+  if (!b || !s.mainRef) return { error: "That branch is no longer here. Refresh and look again." };
+  return testMerge(s.path, s.mainRef, b.tip);
+}
+function stuckRows(data, cfg, name) {
+  const s = data.repos.find((r) => r.name === name);
+  if (!s || !s.mainRef) return null;
+  return { s, rows: recommend(s, { people: cfg.people || {}, bundle: cfg.bundle !== false }).rows };
+}
+
 export function createServer(cfg, port) {
   // This computer, plus any private names you list (e.g. a Tailscale address served
   // over HTTPS by `tailscale serve`). Each host's page may only call its own origin.
@@ -130,6 +143,20 @@ export function createServer(cfg, port) {
         const bundle = u.searchParams.has("bundle") ? u.searchParams.get("bundle") !== "off" : cfg.bundle !== false;
         const dismissed = (u.searchParams.get("dismissed") || "").split(",").filter(Boolean);
         return send(200, "application/json", JSON.stringify(view(data, cfg, { bundle, dismissed })));
+      }
+      if (u.pathname === "/api/clash") {
+        const found = stuckRows(await gather(cfg, { cached: true }), cfg, u.searchParams.get("repo"));
+        const row = found && found.rows.find((r) => r.id === u.searchParams.get("row"));
+        if (!row) return send(404, "application/json", JSON.stringify({ error: "That item has changed. Refresh and look again." }));
+        const m = await clashesOf(found.s, row);
+        return send(200, "application/json", JSON.stringify(m.error ? m : { clean: m.clean, files: m.files.map((f) => ({ path: f.path, clashes: clashes(f.text) })) }));
+      }
+      if (u.pathname === "/api/stuck-prompt") {
+        const found = stuckRows(await gather(cfg, { cached: true }), cfg, u.searchParams.get("repo"));
+        if (!found) return send(404, "application/json", "{}");
+        const stuck = found.rows.filter((r) => r.stuck === "conflict");
+        const text = new Map(await Promise.all(stuck.map(async (r) => { const m = await clashesOf(found.s, r); return [r.id, m.files ? clashText(m.files) : ""]; })));
+        return send(200, "application/json", JSON.stringify({ prompt: stuckPrompt(found.rows, (r) => text.get(r.id) || "", { path: found.s.path, main: found.s.main }) }));
       }
       if (u.pathname === "/api/scene") {
         const s = renderScene({ scene: u.searchParams.get("scene") || null, id: "s" });

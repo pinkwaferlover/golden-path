@@ -4,5 +4,7 @@ node_modules/
 .DS_Store
 
 # Working notes, kept on this computer
-docs/
+docs/*
 .claude/
+
+!docs/adr/
