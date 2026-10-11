@@ -1,0 +1,5 @@
+email	git:commit-message	Co-Authored-By trailers carry the tool's noreply address; only that address	noreply@anthropic\.com
+email	git:commit-author	commits made by the tool's cloud sessions; only that address	noreply@anthropic\.com
+private-term	LICENSE	the copyright line names the owner, as a licence must
+home-path	HANDOFF.md	already public in history (13ece13c); removed from the current file; only that path	C:[/]Users[/]Adam
+session-link	git:commit-message	already public in one old commit trailer; works only for the owner; only that link	(https://)?claude\.ai/code/session_01Xj2gtDkx5jekucH7Fz4K6[R]
