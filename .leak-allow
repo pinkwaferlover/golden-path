@@ -1,5 +1,13 @@
 email	git:commit-message	Co-Authored-By trailers carry the tool's noreply address; only that address	noreply@anthropic\.com
 email	git:commit-author	commits made by the tool's cloud sessions; only that address	noreply@anthropic\.com
 private-term	LICENSE	the copyright line names the owner, as a licence must
-home-path	HANDOFF.md	already public in history (13ece13c); removed from the current file; only that path	C:[/]Users[/]Adam
+home-path	HANDOFF.md	already public in history (13ece13c); removed from the current file; only that path	C:[/]Users[/][A]dam
 session-link	git:commit-message	already public in one old commit trailer; works only for the owner; only that link	(https://)?claude\.ai/code/session_01Xj2gtDkx5jekucH7Fz4K6[R]
+private-term	HANDOFF.md	a working note about other private repos, now moved out of this repo; only its old copies in history remain
+private-term	git:commit-author	commits carry the owner's name and handle, as LICENSE and the repo address do
+private-term=pinkwafer	README.md	the clone link is the repo's own address, which names the owner's handle
+private-term=pinkwafer	bundle/AGENTS.snippet.md	links to this repo, whose address names the owner's handle
+private-term=pinkwafer	git:commit-message	GitHub's merge messages name the owner's handle (Merge pull request #n from <handle>/<branch>)
+private-term=pinkwafer	.leak-allow	this file names the handle on purpose
+private-term	git:commit-message	two old commit messages name a private product; already public, so only that word	(?i)[w]ealth[f]low
+private-term	.leak-allow	an earlier version of this file held the owner's first name in a path pattern; only that word	(?i)[a]dam
